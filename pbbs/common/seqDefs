@@ -1,0 +1,4 @@
+include common/commonDefs
+
+CFLAGS = $(CCFLAGS) -DPARLAY_SEQUENTIAL
+LFLAGS = $(CLFLAGS)

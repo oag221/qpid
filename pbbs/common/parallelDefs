@@ -1,0 +1,4 @@
+include common/commonDefs
+
+CFLAGS = -DPARLAY_CILK -DPARLAY_OPENCILK -fopencilk $(CCFLAGS)
+LFLAGS = -fopencilk $(CLFLAGS)
