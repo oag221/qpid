@@ -37,9 +37,11 @@ cnt1=10000
 #########################################################
 
 threads=(1 12 24 48 96)
+#threads=(96)
 delta=0
 trials=3
 exec=SetCover_MQ
+# datasets=(soc-livejournal.adj)
 datasets=(soc-livejournal.adj orkut.adj roadnetCA.adj twitter-2010.adj)
 
 #########################################################

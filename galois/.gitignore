@@ -23,7 +23,7 @@ tags
 .ycm_extra_conf.py
 
 # no build files
-/build*
+/build/*
 
 # no python build artifacts
 *.pyc

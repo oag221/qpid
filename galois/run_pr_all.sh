@@ -27,8 +27,8 @@ touch $summary_txt
 touch $summary_csv
 
 # For output configs
-cols_txt="%8s %12s %7s %12s %7s %18s %10s %12s %9s %10s %13s"
-cols_csv="%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s"
+cols_txt="%8s %12s %7s %12s %7s %18s %10s %12s %9s %10s %13s %13s"
+cols_csv="%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s"
 
 cnt1=10000
 
@@ -38,13 +38,12 @@ cnt1=10000
 #########################################################
 #########################################################
 
-#threads=(1 12 24 48 96)
-threads=(96)
+threads=(1 12 24 48 96)
 #delta=(28 27 26 25 24 23 22 21 20 19 18 17 16)
-delta=(16 28)
-trials=1
+delta=(20 24 28)
+trials=3
 exec_dir=./build/lonestar/analytics/cpu
-datasets=(soc-LiveJournal1) # soc-LiveJournal1 orkut roadnetCA twitter-2010
+datasets=(soc-LiveJournal1 orkut roadnetCA twitter-2010) # soc-LiveJournal1 orkut roadnetCA twitter-2010
 
 #########################################################
 #########################################################
@@ -62,13 +61,13 @@ for cur_ds in "$@"; do
                 ds="SkipHashPQ"
                 printf "NOTE: for SkipHashPQ, \`n_queues\` for 1 thread is acually always 1 (printed as not 1 for convenience of grouping)\n\n"
 
-                headers="step ds alg exp delta graph n_queues chunk_size threads time(ms) wasted_work"
+                headers="step ds alg exp delta graph n_queues chunk_size threads time(ms) wasted_work iters"
                 printf "${cols_txt}\n" ${headers} >> $summary_txt
                 printf "${cols_csv}\n" ${headers} >> $summary_csv
                 tail $summary_txt
                 
-                # exp_type=("strict" "batch") #!
-                exp_type=("batch")
+                exp_type=("strict" "batch")
+                #exp_type=("batch")
 
                 for e in "${exp_type[@]}"; do
                         batch_opt=0
@@ -99,6 +98,7 @@ for cur_ds in "$@"; do
 
                                                 tot_time=0
                                                 tot_empty_work=0
+                                                tot_iters=0
                                                 for ((i = 1; i <= trials; i++)); do
                                                         filename="${log_dir}/${cnt1}_${ds}-${e}_results_${alg}_${g}_chunksize${c}_queues${n_queues}_delta${d}_threads${t}_trial${i}.log"
                                                         echo "Results" > $filename
@@ -106,16 +106,19 @@ for cur_ds in "$@"; do
 
                                                         ms=$(cat $filename | grep -oP 'runtime_ms \K[0-9]+')
                                                         empty_work=$(cat $filename | grep -oP 'totalEmptyWork \K[0-9]+')
+                                                        iters=$(cat $filename | grep -oP 'total iter = \K[0-9]+')
 
-                                                        (( tot_time += ms))
-                                                        (( tot_empty_work += empty_work))
+                                                        (( tot_time += ms ))
+                                                        (( tot_empty_work += empty_work ))
+                                                        (( tot_iters += iters ))
                                                 done
 
                                                 avg_time=$((tot_time / trials))
                                                 avg_empty_work=$((tot_empty_work / trials))
+                                                avg_iters=$((tot_iters / trials))
                                                 
-                                                printf "${cols_txt}\n" $cnt1 $ds $alg $e $d $g $n_queues $c $t $avg_time $avg_empty_work >> $summary_txt
-                                                printf "${cols_csv}\n" $cnt1 $ds $alg $e $d $g $n_queues $c $t $avg_time $avg_empty_work >> $summary_csv
+                                                printf "${cols_txt}\n" $cnt1 $ds $alg $e $d $g $n_queues $c $t $avg_time $avg_empty_work $avg_iters >> $summary_txt
+                                                printf "${cols_csv}\n" $cnt1 $ds $alg $e $d $g $n_queues $c $t $avg_time $avg_empty_work $avg_iters >> $summary_csv
                                                 tail -1 $summary_txt
                                                 
                                                 cnt1=`expr $cnt1 + 1`
@@ -132,7 +135,7 @@ for cur_ds in "$@"; do
                 #########################################################
                 ds="MQBucket"
 
-                headers_mqbucket="step ds alg batch_size delta graph n_queues stick threads time(ms) wasted_work"
+                headers_mqbucket="step ds alg batch_size delta graph n_queues stick threads time(ms) wasted_work iters"
                 printf "\n${cols_txt}\n" ${headers_mqbucket} >> $summary_txt
                 printf "${cols_csv}\n" ${headers_mqbucket} >> $summary_csv
                 tail -1 $summary_txt
@@ -140,7 +143,7 @@ for cur_ds in "$@"; do
                 prefetch=0
                 stickiness=(8)
                 #batch_size=(1 8 32 128) #!
-                batch_size=(128)
+                batch_size=(1 32 128)
 
                 for b in "${batch_size[@]}"; do
                         for g in "${datasets[@]}"; do
@@ -153,6 +156,7 @@ for cur_ds in "$@"; do
                                                         
                                                         tot_time=0
                                                         tot_empty_work=0
+                                                        tot_iters=0
                                                         for ((i = 1; i <= trials; i++)); do
                                                                 filename="${log_dir}/${cnt1}_${ds}_results_${exec}_${g}_batch${b}_delta${d}_stick${s}_threads${t}_trial${i}.log"
                                                                 echo "Results" > $filename
@@ -160,16 +164,19 @@ for cur_ds in "$@"; do
 
                                                                 ms=$(cat $filename | grep -oP 'runtime_ms \K[0-9]+')
                                                                 empty_work=$(cat $filename | grep -oP 'totalEmptyWork \K[0-9]+')
+                                                                iters=$(cat $filename | grep -oP 'total iter = \K[0-9]+')
                                                                 
                                                                 (( tot_time += ms))
                                                                 (( tot_empty_work += empty_work))
+                                                                (( tot_iters += iters ))
                                                         done
 
                                                         avg_time=$((tot_time / trials))
                                                         avg_empty_work=$((tot_empty_work / trials))
+                                                        avg_iters=$((tot_iters / trials))
                                                         
-                                                        printf "${cols_txt}\n" $cnt1 $ds $alg $b $d $g $num_queues $s $t $avg_time $avg_empty_work >> $summary_txt
-                                                        printf "${cols_csv}\n" $cnt1 $ds $alg $b $d $g $num_queues $s $t $avg_time $avg_empty_work >> $summary_csv
+                                                        printf "${cols_txt}\n" $cnt1 $ds $alg $b $d $g $num_queues $s $t $avg_time $avg_empty_work $avg_iters >> $summary_txt
+                                                        printf "${cols_csv}\n" $cnt1 $ds $alg $b $d $g $num_queues $s $t $avg_time $avg_empty_work $avg_iters >> $summary_csv
                                                         tail -1 $summary_txt
                                                         
                                                         cnt1=`expr $cnt1 + 1`
@@ -207,6 +214,7 @@ for cur_ds in "$@"; do
                                                         
                                                         tot_time=0
                                                         tot_empty_work=0
+                                                        tot_iters=0
                                                         for ((i = 1; i <= trials; i++)); do
                                                                 filename="${log_dir}/${cnt1}_${ds}_results_${exec}_${g}_batch${b}_delta${d}_stick${s}_threads${t}_trial${i}.log"
                                                                 echo "Results" > $filename
@@ -214,16 +222,19 @@ for cur_ds in "$@"; do
 
                                                                 ms=$(cat $filename | grep -oP 'runtime_ms \K[0-9]+')
                                                                 empty_work=$(cat $filename | grep -oP 'totalEmptyWork \K[0-9]+')
+                                                                iters=$(cat $filename | grep -oP 'total iter = \K[0-9]+')
                                                                 
                                                                 (( tot_time += ms))
                                                                 (( tot_empty_work += empty_work))
+                                                                (( tot_iters += iters ))
                                                         done
 
                                                         avg_time=$((tot_time / trials))
                                                         avg_empty_work=$((tot_empty_work / trials))
+                                                        avg_iters=$((tot_iters / trials))
                                                         
-                                                        printf "${cols_txt}\n" $cnt1 $ds $alg - $d $g $p $s $t $avg_time $avg_empty_work >> $summary_txt
-                                                        printf "${cols_csv}\n" $cnt1 $ds $alg - $d $g $p $s $t $avg_time $avg_empty_work >> $summary_csv
+                                                        printf "${cols_txt}\n" $cnt1 $ds $alg - $d $g $p $s $t $avg_time $avg_empty_work $avg_iters >> $summary_txt
+                                                        printf "${cols_csv}\n" $cnt1 $ds $alg - $d $g $p $s $t $avg_time $avg_empty_work $avg_iters >> $summary_csv
                                                         tail -1 $summary_txt
                                                         
                                                         cnt1=`expr $cnt1 + 1`
@@ -261,6 +272,7 @@ for cur_ds in "$@"; do
 
                                         tot_time=0
                                         tot_empty_work=0
+                                        tot_iters=0
 
                                         for ((i = 1; i <= trials; i++)); do
                                                 filename="${log_dir}/${cnt1}_${ds}_results_${alg}_${g}_threads${t}_trial${i}.log"
@@ -269,16 +281,19 @@ for cur_ds in "$@"; do
 
                                                 ms=$(cat $filename | grep -oP 'runtime_ms \K[0-9]+')
                                                 empty_work=$(cat $filename | grep -oP 'totalEmptyWork \K[0-9]+')
+                                                iters=$(cat $filename | grep -oP 'total iter = \K[0-9]+')
 
                                                 (( tot_time += ms))
                                                 (( tot_empty_work += empty_work))
+                                                (( tot_iters += iters ))
                                         done
 
                                         avg_time=$((tot_time / trials))
                                         avg_empty_work=$((tot_empty_work / trials))
+                                        avg_iters=$((tot_iters / trials))
                                         
-                                        printf "${cols_txt}\n" $cnt1 $ds $alg 0 0 $g 0 0 $t $avg_time $avg_empty_work >> $summary_txt
-                                        printf "${cols_csv}\n" $cnt1 $ds $alg 0 0 $g 0 0 $t $avg_time $avg_empty_work >> $summary_csv
+                                        printf "${cols_txt}\n" $cnt1 $ds $alg 0 0 $g 0 0 $t $avg_time $avg_empty_work $avg_iters >> $summary_txt
+                                        printf "${cols_csv}\n" $cnt1 $ds $alg 0 0 $g 0 0 $t $avg_time $avg_empty_work $avg_iters >> $summary_csv
                                         tail -1 $summary_txt
                                         
                                         cnt1=`expr $cnt1 + 1`
@@ -289,4 +304,4 @@ for cur_ds in "$@"; do
 done
 
 
-# LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ./build/lonestar/analytics/cpu/pagerank/pagerank-push-cpu -threads 96 -queues 192 -delta 24 -batch1 128 -batch2 128 -stick 8 -buckets 64 -algo=MQBucket inputs/soc-LiveJournal1.gr
+#LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ./build/lonestar/analytics/cpu/pagerank/pagerank-push-cpu -threads 96 -delta 24 -batch 0 -strict 1 -chunksize 32 -num_chunks 128 -algo=SkipHashPQ inputs/soc-LiveJournal1.gr

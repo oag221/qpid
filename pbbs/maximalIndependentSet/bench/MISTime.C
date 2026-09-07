@@ -34,14 +34,15 @@ using namespace benchIO;
 
 void timeMIS(
   Graph const &G, int rounds, char* outFile, char* qType, int threadNum, int queueNum,
-  int batchSizePop, int batchSizePush, int delta, int bucketNum, int stickiness, bool usePrefetch) {
-  parlay::sequence<char> flags = maximalIndependentSet(
-    G, qType, threadNum, queueNum, batchSizePop, batchSizePush, delta, bucketNum, stickiness, usePrefetch);
+  int batchSizePop, int batchSizePush, int delta, int bucketNum, int stickiness, bool usePrefetch, int strict, int batch, int chunksize) {
+  
+    parlay::sequence<char> flags = maximalIndependentSet(
+    G, qType, threadNum, queueNum, batchSizePop, batchSizePush, delta, bucketNum, stickiness, usePrefetch, strict, batch, chunksize);
   time_loop(rounds, 1.0,
 	    [&] () {flags.clear();},
 	    [&] () {flags = maximalIndependentSet(
                 G, qType, threadNum, queueNum, batchSizePop, batchSizePush,
-                delta, bucketNum, stickiness, usePrefetch);},
+                delta, bucketNum, stickiness, usePrefetch, strict, batch, chunksize);},
 	    [&] () {});
   cout << endl;
   
@@ -66,9 +67,15 @@ int main(int argc, char* argv[]) {
   int stickiness = P.getOptionLongValue("-stick", 1);
   bool usePrefetch = P.getOptionValue("-prefetch");
   int strict = P.getOptionLongValue("-strict", 1);
-  int batch = P.getOptionLongValue("-strict", 0);
+  int batch = P.getOptionLongValue("-batch", 0);
+  int chunksize = P.getOptionLongValue("-chunkSize", 128);
+
+
 
   Graph G = readGraphFromFile<vertexId,edgeId>(iFile);
   timeMIS(G, rounds, oFile, qType, threadNum, queueNum, batchSizePop,
-          batchSizePush, delta, bucketNum, stickiness, usePrefetch);
+          batchSizePush, delta, bucketNum, stickiness, usePrefetch, strict, batch, chunksize);
 }
+
+
+//./MIS -o output -r 1 -type Skiphashpq -threads 96 -queues 128 -chunksize 128 -delta 20 -stick 8 -batch1 128 -batch2 128 ../../../ligra/inputs/roadnetCA.adj

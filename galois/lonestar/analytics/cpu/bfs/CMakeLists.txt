@@ -91,7 +91,7 @@ target_link_libraries(cps_lib PRIVATE pthread rt)
 # -----------------------------------------------------------------------------
 add_executable(bfs-cpu bfs.cpp)
 
-target_compile_definitions(bfs-cpu PRIVATE PROFILING)
+# target_compile_definitions(bfs-cpu PRIVATE PROFILING)
 
 # Link your dependencies + the new cps_lib
 target_link_libraries(bfs-cpu PRIVATE 

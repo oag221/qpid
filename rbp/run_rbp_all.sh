@@ -44,10 +44,11 @@ cnt1=10000
 #########################################################
 #########################################################
 
-threads=(1 12 24 48 96)
-trials=3
+threads=(96)
+trials=1
 exec=rbp
 dataset=ising
+delta=(0 5 10 15 20 22)
 
 #########################################################
 #########################################################
@@ -67,6 +68,7 @@ for cur_ds in "$@"; do
                 ds="SkiphashPQ"
                 delta_strict=21
                 delta_batch=17
+
                 printf "NOTE: for SkipHashPQ, \`n_queues\` for 1 thread is acually always 1 (printed as not 1 for convenience of grouping)\n\n"
 
                 headers="step ds alg exp delta graph n_queues chunk_size threads time(ms) iters updates skips accuracy acc_max"
@@ -84,65 +86,68 @@ for cur_ds in "$@"; do
                         strict_opt=0
                         if [[ "$e" == "strict" ]]; then
                                 strict_opt=1
-                                delta=${delta_strict}
+                                #!delta=${delta_strict}
                         elif [[ "$e" == "batch" ]]; then
                                 batch_opt=1
-                                delta=${delta_batch}
+                                #!delta=${delta_batch}
                         fi
 
+                        for d in "${delta[@]}"; do
+                                for q in "${num_lanes[@]}"; do
+                                        for c in "${chunksize[@]}"; do
+                                                for t in "${threads[@]}"; do
+                                                        if [ "$t" -eq 1 ]; then
+                                                                n_queues=1
+                                                        else
+                                                                n_queues=$q 
+                                                        fi
 
-                        for q in "${num_lanes[@]}"; do
-                                for c in "${chunksize[@]}"; do
-                                        for t in "${threads[@]}"; do
-                                                if [ "$t" -eq 1 ]; then
-                                                        n_queues=1
-                                                else
-                                                        n_queues=$q 
-                                                fi
+                                                        cmd="LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ./build/rbp skiphashpq-rbp ising 1000 $t ${n_queues} 0 0 $d 0 0 0 $c ${batch_opt} ${strict_opt}"
 
-                                                cmd="LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ./build/rbp skiphashpq-rbp ising 1000 $t ${n_queues} 0 0 $delta 0 0 0 $c ${batch_opt} ${strict_opt}"
+                                                        # LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ./build/rbp skiphashpq-rbp ising 1000 96 128 0 0 20 0 0 0 512 1 0
 
-                                                tot_time=0
-                                                tot_iters=0
-                                                tot_updates=0
-                                                tot_skips=0
-                                                tot_acc=0
-                                                tot_acc_max=0
-                                                for ((i = 1; i <= trials; i++)); do
-                                                        filename="${log_dir}/${cnt1}_${ds}-${e}_results_astar_germany.bin_chunksize${c}_queues${n_queues}_delta${delta}_threads${t}_trial${i}.log"
-                                                        echo "Results" > $filename
-                                                        eval $cmd >> $filename 2>&1
+                                                        tot_time=0
+                                                        tot_iters=0
+                                                        tot_updates=0
+                                                        tot_skips=0
+                                                        tot_acc=0
+                                                        tot_acc_max=0
+                                                        for ((i = 1; i <= trials; i++)); do
+                                                                filename="${log_dir}/${cnt1}_${ds}-${e}_results_astar_germany.bin_chunksize${c}_queues${n_queues}_delta${d}_threads${t}_trial${i}.log"
+                                                                echo "Results" > $filename
+                                                                eval $cmd >> $filename 2>&1
 
-                                                        ms=$(cat $filename | grep -oP 'runtime_ms \K[0-9]+')
-                                                        iters_=$(cat $filename | grep -oP 'totalIters = \K[0-9]+')
-                                                        updates_=$(cat $filename | grep -oP 'totalUpdates = \K[0-9]+')
-                                                        skips_=$(cat $filename | grep -oP 'totalSkips = \K[0-9]+')
-                                                        acc_=$(cat $filename | grep -oP 'Accuracy:\K[0-9\.]+')
-                                                        acc_max_=$(cat $filename | grep -oP 'AccuracyMax:\K[0-9\.]+')
+                                                                ms=$(cat $filename | grep -oP 'runtime_ms \K[0-9]+')
+                                                                iters_=$(cat $filename | grep -oP 'totalIters = \K[0-9]+')
+                                                                updates_=$(cat $filename | grep -oP 'totalUpdates = \K[0-9]+')
+                                                                skips_=$(cat $filename | grep -oP 'totalSkips = \K[0-9]+')
+                                                                acc_=$(cat $filename | grep -oP 'Accuracy:\K[0-9\.]+')
+                                                                acc_max_=$(cat $filename | grep -oP 'AccuracyMax:\K[0-9\.]+')
 
-                                                        (( tot_time += ms))
-                                                        (( tot_iters += iters_))
-                                                        (( tot_updates += updates_))
-                                                        (( tot_skips += skips_))
-                                                        tot_acc=$(echo "$tot_acc + ${acc_:-0}" | bc)
-                                                        tot_acc_max=$(echo "$tot_acc_max + ${acc_max_:-0}" | bc)
+                                                                (( tot_time += ms))
+                                                                (( tot_iters += iters_))
+                                                                (( tot_updates += updates_))
+                                                                (( tot_skips += skips_))
+                                                                tot_acc=$(echo "$tot_acc + ${acc_:-0}" | bc)
+                                                                tot_acc_max=$(echo "$tot_acc_max + ${acc_max_:-0}" | bc)
+                                                        done
+
+                                                        avg_time=$((tot_time / trials))
+                                                        iters=$(( tot_iters / trials))
+                                                        updates=$(( tot_updates / trials))
+                                                        skips=$(( tot_skips / trials))
+                                                        acc=$(echo "scale=6; $tot_acc / $trials" | bc)
+                                                        acc_max=$(echo "scale=6; $tot_acc_max / $trials" | bc)
+                                                        
+                                                        printf "${cols_txt}\n" $cnt1 $ds $exec $e $d $dataset $q $c $t $avg_time $iters $updates $skips $acc $acc_max >> $summary_txt
+                                                        printf "${cols_csv}\n" $cnt1 $ds $exec $e $d $dataset $q $c $t $avg_time $iters $updates $skips $acc $acc_max >> $summary_csv
+                                                        tail -1 $summary_txt
+                                                        
+                                                        ((cnt1++))
                                                 done
-
-                                                avg_time=$((tot_time / trials))
-                                                iters=$(( tot_iters / trials))
-                                                updates=$(( tot_updates / trials))
-                                                skips=$(( tot_skips / trials))
-                                                acc=$(echo "scale=6; $tot_acc / $trials" | bc)
-                                                acc_max=$(echo "scale=6; $tot_acc_max / $trials" | bc)
-                                                
-                                                printf "${cols_txt}\n" $cnt1 $ds $exec $e $delta $dataset $q $c $t $avg_time $iters $updates $skips $acc $acc_max >> $summary_txt
-                                                printf "${cols_csv}\n" $cnt1 $ds $exec $e $delta $dataset $q $c $t $avg_time $iters $updates $skips $acc $acc_max >> $summary_csv
-                                                tail -1 $summary_txt
-                                                
-                                                ((cnt1++))
                                         done
-                                done
-                        done 
+                                done 
+                        done
                 done
         fi
         if [[ $cur_ds == "ALL" || $cur_ds == "MQBucket" ]]; then
@@ -153,7 +158,7 @@ for cur_ds in "$@"; do
                 #########################################################
                 #########################################################
                 ds="MQBucket"
-                delta=(7)
+                #!delta=(7)
 
                 headers_mqbucket="step ds alg batch_size delta graph n_queues stick threads time(ms) iters updates skips accuracy acc_max"
                 printf "\n${cols_txt}\n" ${headers_mqbucket} >> $summary_txt

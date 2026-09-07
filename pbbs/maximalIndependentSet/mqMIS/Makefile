@@ -1,11 +1,11 @@
 #CC = clang++
-CC = ~/opencilk/bin/clang++
-CCFLAGS = -mcx16 -O3 -std=c++17 -DNDEBUG
+CC = $(HOME)/opencilk/bin/clang++
+CCFLAGS = -mcx16 -O3 -std=c++20 -DNDEBUG -Wno-error -DINTEL -DCACHE_LINE_SIZE=64
 CLFLAGS =
 CFLAGS = -DPARLAY_SEQUENTIAL -pthread $(CCFLAGS)
 LFLAGS = -lpthread $(CLFLAGS)
-GITROOT := $(shell git rev-parse --show-toplevel)
-CCFLAGS += -I$(GITROOT) -I$(GITROOT)/parlaylib/include
+GITROOT = $(HOME)/qpid/pbbs
+CCFLAGS += -I$(GITROOT) -I$(GITROOT)/parlaylib/include -I$(HOME)/qpid/cps/include-skiphashpq 
 
 ifeq (, $(shell which ld.lld))
 else
@@ -20,10 +20,10 @@ CPS= MultiQueue.h MultiBucketQueue.h BucketStructs.h
 # --- DATA STRUCTURE INTEGRATION ---
 
 # 1. Directories
-SPRAY_DIR   = ../cps/include-spraylist
-LINDEN_DIR  = ../cps/include-linden
-PIPQ_DIR    = ../cps/include-pipq
-COMMON_DIR  = ../cps/common
+SPRAY_DIR   = $(HOME)/qpid/cps/include-spraylist
+LINDEN_DIR  = $(HOME)/qpid/cps/include-linden
+PIPQ_DIR    = $(HOME)/qpid/cps/include-pipq
+COMMON_DIR  = $(HOME)/qpid/cps/common
 
 # 2. Include Flags
 # Note: Common subdirectories are added because headers often include "gc.h" directly
@@ -49,11 +49,11 @@ SMQ_INC= -I../cps/include-smq/
 
 TIME = $(BENCH)Time
 CHECK = ../bench/$(BENCH)Check
-INCLUDE =
+INCLUDE = $(SKIPHASH_INC) $(SMQ_INC) $(ALL_PQ_INC)
 
 # Make benchmark
 $(BENCH) : $(TIME).o $(OBJS) $(CHECK)
-	$(CC) $(SKIPHASH_INC) $(SMQ_INC) $(ALL_PQ_INC) -o $@ $(TIME).o $(OBJS) $(LFLAGS) $(ALL_PQ_SRCS)
+	$(CC) $(CFLAGS) $(SKIPHASH_INC) $(SMQ_INC) $(ALL_PQ_INC) -o $@ $(TIME).o $(OBJS) $(LFLAGS) $(ALL_PQ_SRCS)
 
 # Timing Code
 $(TIME).o : ../bench/$(TIME).C $(CPS)

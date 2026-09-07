@@ -24,7 +24,8 @@
 #include <chrono>
 #include <thread>
 #include <string>
-#include "parlay/primitives.h"
+#include <optional>
+#include "../../parlaylib/include/parlay/primitives.h"
 #include "common/graph.h"
 #include "MIS.h"
 #include "BucketStructs.h"
@@ -37,6 +38,9 @@
 #include "../../../galois/lonestar/analytics/cpu/config.h"
 
 OPTSTM2_GLOBALS_INITIALIZER;
+
+alignas(64) extern uint8_t levelmax[64];
+__thread unsigned long *seeds;
 
 
 // **************************************************************
@@ -104,9 +108,9 @@ void threadTask(Graph const &G, atomic<uint8_t> *vertexFlags,
   stats->reinsert = reinserts;
 }
 
-template <typename MQ_Type>
+template <typename MQ_Type, typename descriptor>
 void threadTaskSTM(Graph const &G, atomic<uint8_t> *vertexFlags,
-                MQ_Type &pq, stat *stats)
+                MQ_Type &pq, int tid, stat *stats, termination_detector_2& detector)
 {
   uint64_t iters = 0, deads = 0, reinserts = 0;
   uint32_t vertex;
@@ -114,7 +118,7 @@ void threadTaskSTM(Graph const &G, atomic<uint8_t> *vertexFlags,
   if (tid) pq.init_thread(me, tid);
   else pq.re_init_thread(me);
 
-  using extract_ret_t = std::optional<std::pair<uint32_t,Message*>>;
+  using extract_ret_t = std::optional<std::pair<uint32_t,uint32_t>>;
   auto call_extract = [&]() {
       me->op_begin();
       auto ret = pq.extract_min_strict(me); 
@@ -151,7 +155,9 @@ void threadTaskSTM(Graph const &G, atomic<uint8_t> *vertexFlags,
       if (vertexFlags[ngh].load(memory_order_acquire) == 0 && ngh < vertex) {
         proceed = false;
         if (!vertexFlags[vertex].load(memory_order_acquire)) {
+          me->op_begin();
           pq.insert(me, vertex, vertex);
+          me->op_end();
           reinserts++;
         }
         break;
@@ -181,7 +187,7 @@ void spawnTasks(Graph const &G, MQ_Type &wl, atomic<uint8_t> *vertexFlags, int t
   }
 
   stat stats[threadNum];
-  for (int i = 0; i < threadNum;i++) {
+  for (int i = 0; i < threadNum; i++) {
     stats[i].iter = 0;
     stats[i].dead = 0;
     stats[i].reinsert = 0;
@@ -237,7 +243,7 @@ void spawnTasks(Graph const &G, MQ_Type &wl, atomic<uint8_t> *vertexFlags, int t
 }
 
 template <typename MQ_Type, typename descriptor>
-void spawnTasksSTM(Graph const &G, MQ_Type &wl, atomic<uint8_t> *vertexFlags, int threadNum)
+void spawnTasksSTM(Graph const &G, MQ_Type &wl, atomic<uint8_t> *vertexFlags, int threadNum, int strict, int batch)
 {
   auto *me = new descriptor();
   wl.init_thread(me, 0);
@@ -246,6 +252,8 @@ void spawnTasksSTM(Graph const &G, MQ_Type &wl, atomic<uint8_t> *vertexFlags, in
     wl.insert(me, i, i);
     me->op_end();
   }
+
+  termination_detector_2 detector_2(threadNum);
 
   stat stats[threadNum];
   for (int i = 0; i < threadNum;i++) {
@@ -265,7 +273,7 @@ void spawnTasksSTM(Graph const &G, MQ_Type &wl, atomic<uint8_t> *vertexFlags, in
     CPU_SET(coreID, &cpuset);
     thread *newThread = new thread(
       threadTaskSTM<MQ_Type, descriptor>, ref(G), ref(vertexFlags), 
-      ref(wl), &stats[i]
+      ref(wl), i, &stats[i], std::ref(detector_2)
     );
     int rc = pthread_setaffinity_np(newThread->native_handle(),
                                     sizeof(cpu_set_t), &cpuset);
@@ -278,7 +286,7 @@ void spawnTasksSTM(Graph const &G, MQ_Type &wl, atomic<uint8_t> *vertexFlags, in
   CPU_ZERO(&cpuset);
   CPU_SET(0, &cpuset);
   sched_setaffinity(0, sizeof(cpuset), &cpuset);
-  threadTaskSTM<MQ_Type, descriptor>(G, vertexFlags, wl, &stats[0]);
+  threadTaskSTM<MQ_Type, descriptor>(G, vertexFlags, wl, 0, &stats[0], std::ref(detector_2));
   for (thread*& worker : workers) {
     worker->join();
     delete worker;
@@ -306,7 +314,7 @@ void spawnTasksSTM(Graph const &G, MQ_Type &wl, atomic<uint8_t> *vertexFlags, in
 template<bool usePrefetch>
 parlay::sequence<char> run(
   Graph const &G, char* qType, int threadNum, int queueNum,
-  int batchSizePop, int batchSizePush, int delta, int bucketNum, int stickiness, int strict, int batch)
+  int batchSizePop, int batchSizePush, int delta, int bucketNum, int stickiness, int strict, int batch_ins, int chunkSize)
 {
   cout << "\nRunning MQ based MIS" << endl;
   size_t n = G.n;
@@ -362,8 +370,6 @@ parlay::sequence<char> run(
 
     config_t cfg;
     cfg.threads = threadNum;
-    cfg.order = 1; // Decreasing order!
-
     cfg.chunksize = chunkSize;
     cfg.num_queues = queueNum;
     cfg.max_batch_size = chunkSize;
@@ -381,7 +387,7 @@ parlay::sequence<char> run(
     map pq(me, &cfg);
     pq.init_thread(me, 0);
     std::cout << "Done initializing pq.\n";
-    spawnTasksSTM<map, descriptor>(G, pq, vertexFlags, threadNum, strict, batch);
+    spawnTasksSTM<map, descriptor>(G, pq, vertexFlags, threadNum, strict, batch_ins);
   } else {
     cout << qTypeStr << ": no matching type!\n";
     exit(0);
@@ -400,14 +406,15 @@ parlay::sequence<char> run(
 parlay::sequence<char> maximalIndependentSet(
   Graph const &G, char* qType, int threadNum, int queueNum,
   int batchSizePop, int batchSizePush, int delta, int bucketNum,
-  int stickiness, bool usePrefetch, int strict, int batch)
+  int stickiness, bool usePrefetch, int strict, int batch, int chunksize)
 {
+  std::cout << "Calling run\n";
   if (usePrefetch) 
     return run<true>(
       G, qType, threadNum, queueNum, batchSizePop, batchSizePush,
-      delta, bucketNum, stickiness, strict, batch);
+      delta, bucketNum, stickiness, strict, batch, chunksize);
   else
     return run<false>(
       G, qType, threadNum, queueNum, batchSizePop, batchSizePush,
-      delta, bucketNum, stickiness, strict, batch);
+      delta, bucketNum, stickiness, strict, batch, chunksize);
 }

@@ -114,7 +114,9 @@ static void thread_task(MRF* mrf,
 
         uint64_t mID = id(m);
         double curPrio = priorities[mID].load(std::memory_order_relaxed);
+        //int32_t curPrioKey = static_cast<uint32_t>(curPrio * MULT_VAL);
         if (curPrio < pushedPrio) {
+        //if (curPrioKey != b) {
             // Outdated, re-insert with the current priority
             if (curPrio > sensitivity) {
                 uint32_t prio = curPrio * MULT_VAL;
@@ -182,7 +184,7 @@ static void thread_task(MRF* mrf,
     stats->iters=it;
     stats->updates=updates;
     stats->skips=skips;
-    pq.thread_terminate();
+    //pq.thread_terminate();
 }
 
 template<typename MQ_I, typename descriptor>
@@ -241,7 +243,9 @@ static void thread_task_strict(MRF* mrf,
 
         uint64_t mID = id(m);
         double curPrio = priorities[mID].load(std::memory_order_relaxed);
+        //int32_t curPrioKey = static_cast<uint32_t>(curPrio * MULT_VAL);
         if (curPrio < pushedPrio) {
+        //if (curPrioKey != b) {
             // Outdated, re-insert with the current priority
             if (curPrio > sensitivity) {
                 uint32_t prio = curPrio * MULT_VAL;

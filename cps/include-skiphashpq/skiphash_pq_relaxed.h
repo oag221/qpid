@@ -95,10 +95,11 @@ template <typename P, typename J, class OPTSTM> class skiphash_pq_relaxed {
   const int MAX_BATCH_SIZE;
   const int CHUNK_SIZE;
   const int DELTA;
+  const int ORDER; // 0 == increasing, 1 == decreasing
 
 public:
   template <typename config_t>
-  skiphash_pq_relaxed(OPTSTM *me, config_t *cfg) : jobs(me, cfg), priorities(me, cfg), MAX_BATCH_SIZE(cfg->max_batch_size), CHUNK_SIZE(cfg->chunksize), DELTA(cfg->delta) {
+  skiphash_pq_relaxed(OPTSTM *me, config_t *cfg) : jobs(me, cfg), priorities(me, cfg), MAX_BATCH_SIZE(cfg->max_batch_size), CHUNK_SIZE(cfg->chunksize), DELTA(cfg->delta), ORDER(cfg->order) {
     #ifdef CHUNK_POOL
     for (int i = 0; i < cfg->threads; i++) {
       thread_pools.push_back(pool_t(CHUNK_SIZE, cfg->pool_reserve, cfg->pool_init_chunks, me));
@@ -217,7 +218,8 @@ public:
       int cur_idx = 0;
       while (cur_idx < t_ins_vec_idx) {
         int start_idx = cur_idx;
-        auto cur_delt_p = t_ins_vec[cur_idx].prio.get_unsafe() >> DELTA;
+        auto cur_k = t_ins_vec[cur_idx].prio.get_unsafe();
+        auto cur_delt_p = cur_k >> DELTA;
         auto prev_delta_p = cur_delt_p;
         // Insert contiguous elements of the same priority together
         while ((cur_idx < t_ins_vec_idx) && (prev_delta_p == cur_delt_p)) {
@@ -226,7 +228,7 @@ public:
         // Insert vec[start_idx:cur_idx]
         int batch_size = cur_idx - start_idx;
         if (batch_size == 1) {
-          insert(me, prev_delta_p, t_ins_vec[start_idx].job.get_unsafe());
+          insert(me, cur_k, t_ins_vec[start_idx].job.get_unsafe());
         } else {
           std::vector<kv_t> vec_sub(t_ins_vec.begin() + start_idx, t_ins_vec.begin() + cur_idx);
           insert_batch_internal(me, prev_delta_p, vec_sub, batch_size);
@@ -306,6 +308,10 @@ public:
         t_remove_arr = nullptr;
         continue;
       }
+
+      // Sort t_remove_array->elements
+      // if (ORDER == 1) t_remove_arr->sort_elements();
+      // else t_remove_arr->sort_elements_desc();
 
       // Pull a job out
       auto ret_p = t_remove_arr->elements[0].prio.get_unsafe();

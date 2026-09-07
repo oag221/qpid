@@ -459,7 +459,7 @@ void solve(std::string qType, MRF* mrf, double sensitivity,
             numa_pq_ds.init_thread(tid);
         };
         auto call_insert_pipq = [&](uint32_t p, Message* v) {
-            numa_pq_ds.insert(p, v);
+            numa_pq_ds.push(p, v);
         };
         auto call_extract_pipq = [&]() {
             return numa_pq_ds.extract_min();

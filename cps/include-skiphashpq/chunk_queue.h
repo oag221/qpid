@@ -69,6 +69,21 @@ template <typename P, typename E, class OPTSTM> class chunk_queue {
       return rw.LOG_NEW(new (region) q_node_t());
     }
 
+    // Sorts the first 'count' elements in ascending order by priority
+    // ONLY use when the chunk is privitized
+    void sort_elements() {
+        std::sort(elements + dequeues.get_unsafe(), elements + enqueues.get_unsafe(), [](kv_t& a, kv_t& b) {
+            return a.prio.get_unsafe() < b.prio.get_unsafe(); 
+        });
+    }
+    
+    // Sorts in descending order
+    void sort_elements_desc() {
+        std::sort(elements + dequeues.get_unsafe(), elements + enqueues.get_unsafe(), [](kv_t& a, kv_t& b) {
+            return a.prio.get_unsafe() > b.prio.get_unsafe(); 
+        });
+    }
+
     void reset() {
       enqueues.set_unsafe(0);
       dequeues.set_unsafe(0);
@@ -111,6 +126,35 @@ template <typename P, typename E, class OPTSTM> class chunk_queue {
   ///
   /// @return A chunk from the queue, or NONE on abort
   std::optional<q_node_t*> dequeue(RWTX &rw, bool &empty_q) {
+    // q_node_t* tail = &tail_;
+
+    // // Get node before tail
+    // auto target_o = tail->prev.get(rw, tail);
+    // if (!target_o)
+    //   return {}; // ABORT!
+    // auto target = target_o.value();
+
+    // // This may happen due to ending RO and starting RW
+    // if (target == &head_) {
+    //   rw.OP()->force_abort(rw); // calls unwind
+    //   return {}; // ABORT! - force to restart
+    // }
+
+    // // Get target's predecessor
+    // auto prev_o = target->prev.get(rw, target);
+    // if (!prev_o)
+    //   return {}; // ABORT!
+    // auto prev = prev_o.value();
+    // // Unstitch target
+    // if (!prev->next.set(rw, prev, tail)) return {}; // ABORT!
+    // if (!tail->prev.set(rw, tail, prev)) return {}; // ABORT!
+
+    // // Check if now empty
+    // if (prev == &head_) {
+    //   empty_q = true;
+    // }
+    // return target;
+
     // Get target to unstitch from
     q_node_t* head = &head_;
     auto target_o = head->next.get(rw, head);

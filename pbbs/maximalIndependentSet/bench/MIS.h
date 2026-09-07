@@ -7,6 +7,6 @@ using Graph = graph<vertexId,edgeId>;
 
 parlay::sequence<char> maximalIndependentSet(
   Graph const &G, char* qType, int threadNum, int queueNum, int batchSizePop,
-  int batchSizePush, int delta, int bucketNum, int stickiness, bool usePrefetch
+  int batchSizePush, int delta, int bucketNum, int stickiness, bool usePrefetch, int strict, int batch, int chunksize
 );
 

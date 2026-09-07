@@ -45,6 +45,7 @@ using PQElement = std::tuple<uintE, uintE>;
 
 struct stats {
   uint64_t emptyWork = 0;
+  uint64_t emptyWorkPostponed = 0;
 };
 
 template <class vertex, typename MQ>
@@ -385,6 +386,7 @@ void MQThreadTaskSTM_Strict(graph<vertex>& G, MQ& wl,
                             prio_tracker& p_tracker)
 {
     uint64_t emptyWork = 0;
+    //uint64_t emptyWorkPostponed = 0;
     auto* me = new descriptor();
     using extract_ret_t = std::optional<std::pair<uintE,uintE>>;
     auto call_extract = [&]() {
@@ -443,6 +445,7 @@ void MQThreadTaskSTM_Strict(graph<vertex>& G, MQ& wl,
             //std::cout << "inserted " << curCard << "\n";
 
             emptyWork++;
+            //emptyWorkPostponed++;
             continue;
         }
 
@@ -482,6 +485,7 @@ void MQThreadTaskSTM_Strict(graph<vertex>& G, MQ& wl,
     }
 
     threadStat->emptyWork = emptyWork;
+    //threadStat->emptyWorkPostponed = emptyWork;
 }
 
 template <class vertex, typename MQ, typename descriptor>
@@ -745,10 +749,13 @@ void spawnTasksSTM(graph<vertex>& G, MQ_Type &wl, int threadNum,
     std::cout << "runtime_ms " << ms << "\n";
 
     uint64_t totalEmptyWork = 0;
+    uint64_t totEworkPostponed = 0;
     for (int i = 0; i < threadNum; i++) {
         totalEmptyWork += threadStats[i].emptyWork;
+        totEworkPostponed += threadStats[i].emptyWorkPostponed;
     }
     cout << "total empty work: " << totalEmptyWork << endl;
+    cout << "total empty work postponed: " << totEworkPostponed << endl;
 
     // process cover
     if (!noverify) {

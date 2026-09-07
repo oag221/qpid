@@ -106,10 +106,10 @@ for cur_ds in "$@"; do
 
                                                 cmd="LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ${exec_dir}/${alg}/${alg}-cpu -startNode ${startNode} -threads $t -delta 0 -batch $batch_opt -strict $strict_opt -chunksize $c -num_chunks $q -algo=${ds} ${input_dir}/${g}.gr"
 
-                                                ./build/lonestar/analytics/cpu/bfs/bfs-cpu -algo=SkipHashPQ -startNode 1 -threads 1 -strict 1 -chunksize 128 -num_chunks 128 inputs/soc-LiveJournal1.gr
+                                                # LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ./build/lonestar/analytics/cpu/bfs/bfs-cpu -algo=SkipHashPQ -startNode 1 -threads 192 -strict 0 -batch 1 -chunksize 128 -num_chunks 128 inputs/soc-LiveJournal1.gr
 
-                                                ./build/lonestar/analytics/cpu/pagerank/pagerank-push-cpu -algo=SkipHashPQ -startNode 1 -threads 1 -strict 1 -chunksize 128 -num_chunks 128 inputs/soc-LiveJournal1.gr
-                                                
+                                                LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ./build/lonestar/analytics/cpu/sssp/sssp-cpu -algo=SkipHashPQ -startNode 1 -threads 96 -strict 0 -batch 1 -chunksize 64 -num_chunks 128 inputs/weighted_inputs/w_1-10_soc-LiveJournal1.gr
+                                                # ./build/lonestar/analytics/cpu/pagerank/pagerank-push-cpu -algo=SkipHashPQ -startNode 1 -threads 1 -strict 1 -chunksize 128 -num_chunks 128 inputs/soc-LiveJournal1.gr
                                                 
                                                 tot_time=0
                                                 tot_empty_work=0
@@ -161,6 +161,10 @@ for cur_ds in "$@"; do
                                         for t in "${threads[@]}"; do
                                                 num_queues=$((t * 2))
                                                 cmd="LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ${exec_dir}/${alg}/${alg}-cpu -startNode ${startNode} -threads $t -queues ${num_queues} -delta 0 -batch1 ${b} -batch2 ${b} -stick $s -buckets 64 -algo=${ds} ${input_dir}/${g}.gr"
+
+                                                # LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ./build/lonestar/analytics/cpu/bfs/bfs-cpu -startNode 1 -threads 192 -queues 384 -delta 0 -batch1 128 -batch2 128 -stick 8 -buckets 64 -algo=MQBucket inputs/soc-LiveJournal1.gr
+
+                                                # LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ./build/lonestar/analytics/cpu/sssp/sssp-cpu -startNode 1 -threads 192 -queues 384 -delta 0 -batch1 128 -batch2 128 -stick 8 -buckets 64 -algo=MQBucket inputs/weighted_inputs/w_1-10_soc-LiveJournal1.gr
                                                 
                                                 tot_time=0
                                                 tot_empty_work=0
@@ -288,7 +292,7 @@ for cur_ds in "$@"; do
                                         printf "${cols_csv}\n" $cnt1 $ds $alg 0 0 $g 0 0 $t $avg_time $avg_empty_work >> $summary_csv
                                         tail -1 $summary_txt
                                         
-                                        cnt1=$((cnt + 1))
+                                        cnt1=`expr $cnt1 + 1`
                                 done 
                         done
                 done
