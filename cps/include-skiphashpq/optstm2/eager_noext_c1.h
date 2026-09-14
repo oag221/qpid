@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include <iostream>
+
 #include "../exotm/exotm.h"
 #include "../include/hash.h"
 #include "../include/orec_policies.h"
@@ -111,6 +113,7 @@ private:
     // are no locks, this is going to bump the counter, so dodge it if there are
     // no writes yet
     if (!exo.has_orecs()) { // does not have any locks
+      leave_epoch();
       exo.ro_end();
       if (undolog.size() > 0) {
         std::cout << "UNDO LOG SIZE\n";
@@ -118,6 +121,7 @@ private:
       }
     } else {
       undolog.undo_writes();
+      leave_epoch();
       exo.wo_end();
       undolog.clear();
     }
@@ -129,6 +133,7 @@ private:
       std::terminate();
     // read-only fast-path
     if (!exo.has_orecs()) {
+      leave_epoch();
       exo.ro_end();
       mallocs.clear();
       for (auto a : frees)
@@ -143,6 +148,7 @@ private:
       return false;
 
     // We're committed, so release locks and clean up
+    leave_epoch();
     exo.wo_end();
     mallocs.clear();
     for (auto a : frees)
@@ -158,10 +164,78 @@ public:
   eager_noext_c1_t() : exo(), smr(_globals.smr) {}
 
   /// Start an operation (notify SMR)
-  void op_begin() { smr.enter(); }
+  ///
+  /// The SMR epoch is published by tx_ro_begin()/tx_wo_begin() rather than
+  /// here, because those already read the clock and already execute the
+  /// store-load fence that publishing requires.  Doing it here as well cost an
+  /// extra rdtscp plus an extra locked exchange (~40 cycles) on *every*
+  /// operation -- including operations that never touch shared memory at all,
+  /// such as a priority-queue extract served from a thread-private chunk.
+  ///
+  /// Define OPTSTM_SEPARATE_EPOCH to restore the old behaviour (useful as an
+  /// ablation).
+  void op_begin() {
+#ifdef OPTSTM_SEPARATE_EPOCH
+    smr.enter();
+#endif
+  }
 
   /// End an operation (notify SMR)
-  void op_end() { smr.exit(_globals.smr); }
+  void op_end() {
+#ifdef OPTSTM_SEPARATE_EPOCH
+    smr.exit(_globals.smr);
+#else
+    // The epoch was already left when the last transaction ended; all that is
+    // left is to timestamp anything this operation retired.  This is a plain
+    // predictable branch when there is nothing pending.
+    smr.retire_pending(_globals.smr);
+#endif
+  }
+
+  /// Begin a read-only transaction, publishing the SMR epoch from the same
+  /// clock read that gives the transaction its start time.
+  void tx_ro_begin() {
+#ifdef OPTSTM_SEPARATE_EPOCH
+    exo.ro_begin();
+#else
+    uint64_t t = exo.read_clock();
+    smr.publish(t);      // relaxed; ordered by the exchange below
+    exo.ro_begin_at(t);  // full fence
+#endif
+    in_tx = true;
+  }
+
+  /// Begin a writing transaction, publishing the SMR epoch from the same clock
+  /// read that gives the transaction its start time.
+  void tx_wo_begin() {
+#ifdef OPTSTM_SEPARATE_EPOCH
+    exo.wo_begin();
+#else
+    uint64_t t = exo.read_clock();
+    smr.publish(t);      // relaxed; ordered by the exchange below
+    exo.wo_begin_at(t);  // full fence
+#endif
+    in_tx = true;
+  }
+
+  /// Turn an in-flight read-only transaction into a writing one without
+  /// re-reading the clock.  Use via `RW rw(me, std::move(ro));`.
+  void tx_upgrade_to_rw() {
+    if (!in_tx)
+      std::terminate();
+    exo.wo_upgrade();
+  }
+
+private:
+  /// Leave the SMR epoch.  Must be called immediately before the exoTM end
+  /// routine, whose seq_cst store to `start_time` supplies the fence.
+  void leave_epoch() {
+#ifndef OPTSTM_SEPARATE_EPOCH
+    smr.unpublish();
+#endif
+  }
+
+public:
 
   /// A good hash function.  Works nicely to "finalize" after std::hash().
   ///
@@ -270,6 +344,7 @@ public:
     if (!in_tx)
       std::terminate();
     this->in_tx = false;
+    this->leave_epoch();
     this->exo.ro_end();
     this->readset.clear();
   }

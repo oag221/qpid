@@ -7,6 +7,7 @@ include_directories(${CPS_ROOT})
 
 #! Uncomment if debugging
 # add_definitions(-DPROFILING -DPROFILING_SERIAL)
+add_definitions(-DPROFILE_ABORTS)
 
 # Detect Cache Line Size (Required for Linden/Spraylist performance)
 if(UNIX AND NOT APPLE)
@@ -91,7 +92,7 @@ target_link_libraries(cps_lib PRIVATE pthread rt)
 # -----------------------------------------------------------------------------
 add_executable(bfs-cpu bfs.cpp)
 
-# target_compile_definitions(bfs-cpu PRIVATE PROFILING)
+target_compile_definitions(bfs-cpu PRIVATE PROFILE_ABORTS)
 
 # Link your dependencies + the new cps_lib
 target_link_libraries(bfs-cpu PRIVATE 

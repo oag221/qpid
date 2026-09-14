@@ -98,7 +98,7 @@ for cur_ds in "$@"; do
 
                                         cmd="LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ./${exec} -type ${ds} -rounds 1 -threads $t -delta ${delta} -strict ${strict_opt} -batch ${batch_opt} -chunksize $c -numchunks ${n_queues} -s inputs/$g"
 
-                                        # ./SetCover_MQ -type SkiphashPQ -rounds 1 -threads 96 -delta 0 -strict 1 -batch 0 -chunksize 128 -numchunks 128 -s inputs/soc-livejournal.adj
+                                        # LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ./SetCover_MQ -type SkiphashPQ -rounds 1 -threads 96 -delta 0 -strict 1 -batch 0 -chunksize 128 -numchunks 128 -s ../pbbs/maximalIndependentSet/inputs/soc-livejournal-symm.adj
 
                                         tot_time=0
                                         tot_empty_work=0
@@ -151,6 +151,9 @@ for cur_ds in "$@"; do
                                                 num_queues=$((t * 2))
                                                 cmd="LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ./${exec} -type ${ds} -rounds 1 -threads $t -delta ${delta} -queues ${num_queues} -batch1 ${b} -batch2 ${b} -stick $s -s inputs/$g"
                                                 
+                                                # LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ./SetCover_MQ -type MQBucket -rounds 1 -threads 96 -delta 0 -queues 192 -batch1 128 -batch2 128 -stick 8 -s ../pbbs/maximalIndependentSet/inputs/roadnet
+
+
                                                 tot_time=0
                                                 tot_empty_work=0
                                                 for ((i = 1; i <= trials; i++)); do

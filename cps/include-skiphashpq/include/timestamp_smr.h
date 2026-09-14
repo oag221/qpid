@@ -91,12 +91,41 @@ public:
     ts.exchange(__rdtscp(&dummy));
   }
 
+  /// Publish an epoch timestamp that has *already been read from the clock* by
+  /// the caller.  This exists so that a synchronization policy can reuse the
+  /// timestamp it reads when a transaction begins, instead of paying a second
+  /// rdtscp plus a second locked exchange on every operation.
+  ///
+  /// The store is relaxed: the caller MUST follow it with a store-load fence
+  /// before dereferencing any reclaimable_t (exoTM's `start_time.exchange()`
+  /// provides exactly that).
+  ///
+  /// @param t The timestamp to publish
+  void publish(uint64_t t) { ts.store(t, std::memory_order_relaxed); }
+
+  /// Leave the epoch.  Like publish(), this is relaxed and relies on the
+  /// caller's subsequent fence (exoTM's ro_end()/wo_end() both perform a
+  /// seq_cst store to `start_time`).
+  void unpublish() { ts.store(ULLONG_MAX, std::memory_order_relaxed); }
+
+  /// Report whether this thread has objects waiting to be timestamped
+  bool has_pending() const { return pending.size() != 0; }
+
   /// Exit a region that optimistically accesses reclaimable_t objects
   ///
   /// @param globals A reference to the global state for timestamp_smr_t
   void exit(global_t &globals) {
     // exit the "epoch"
     ts = (ULLONG_MAX); // only need store fence, not load fence
+    retire_pending(globals);
+  }
+
+  /// Timestamp any pending reclamations and move them to `unreachable`,
+  /// sweeping periodically.  Split out of exit() so that a policy which manages
+  /// the epoch itself (see publish()/unpublish()) can still drive reclamation.
+  ///
+  /// @param globals A reference to the global state for timestamp_smr_t
+  void retire_pending(global_t &globals) {
     // If we have pendings, we need a timestamp for them, then we can move them
     // to `unreachable`
     if (!pending.size())

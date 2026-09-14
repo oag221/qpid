@@ -1,6 +1,8 @@
 #pragma once
 
 #include <exception>
+#include <iostream>
+#include <utility>
 
 /// A lightweight RAII object for RO transactions.
 /// - Statically identifies RO transactions, so we can get simpler RO get()
@@ -10,6 +12,7 @@
 template <class DESCRIPTOR> class RoStm {
   // Fields need to be friends, so they can access `op`
   template <typename T, typename D> friend class field_base_t;
+  template <class D> friend class RwStm;
 
   DESCRIPTOR * op; // The thread descriptor for this operation
 
@@ -17,9 +20,14 @@ public:
   /// Construct to start a read-only transaction
   ///
   /// @param me The thread descriptor
-  RoStm(DESCRIPTOR *me) : op(me) {
-    me->exo.ro_begin();
-    me->in_tx = true;
+  RoStm(DESCRIPTOR *me) : op(me) { me->tx_ro_begin(); }
+
+  /// Relinquish this transaction so that it can be adopted by an RwStm.  After
+  /// this the RoStm is inert and its destructor does nothing.
+  DESCRIPTOR *release() {
+    DESCRIPTOR *r = op;
+    op = nullptr;
+    return r;
   }
 
   // MOVE constructor
@@ -71,9 +79,15 @@ public:
   /// Construct to start a read/write transaction
   ///
   /// @param me The thread descriptor
-  RwStm(DESCRIPTOR *me) : op(me) {
-    op->exo.wo_begin();
-    op->in_tx = true;
+  RwStm(DESCRIPTOR *me) : op(me) { op->tx_wo_begin(); }
+
+  /// Adopt an in-flight read-only transaction, keeping its start time.  This
+  /// saves a clock read and two fences relative to `end_ro(); RW rw(me);` for
+  /// operations that read before they write.  Usage:
+  ///     RO ro(me); ...reads...; RW rw(me, std::move(ro));
+  template <class RO_T> RwStm(DESCRIPTOR *me, RO_T &&ro) : op(me) {
+    ro.release();
+    op->tx_upgrade_to_rw();
   }
 
   // MOVE constructor

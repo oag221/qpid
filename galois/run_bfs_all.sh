@@ -30,8 +30,8 @@ touch $summary_txt
 touch $summary_csv
 
 # For output configs
-cols_txt="%8s %12s %7s %12s %7s %18s %10s %12s %9s %10s %13s"
-cols_csv="%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s"
+cols_txt="%8s %12s %7s %12s %7s %18s %10s %12s %9s %10s %13s %13s %10s"
+cols_csv="%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s"
 
 cnt1=10000
 
@@ -89,7 +89,7 @@ for cur_ds in "$@"; do
 
                         for g in "${datasets[@]}"; do
                                 if [[ "$g" == "roadnetCA" ]]; then
-                                        chunksize=(4 16)
+                                        chunksize=(16)
                                         n_queues=16
                                 else
                                         chunksize=(64)
@@ -106,13 +106,14 @@ for cur_ds in "$@"; do
 
                                                 cmd="LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ${exec_dir}/${alg}/${alg}-cpu -startNode ${startNode} -threads $t -delta 0 -batch $batch_opt -strict $strict_opt -chunksize $c -num_chunks $q -algo=${ds} ${input_dir}/${g}.gr"
 
-                                                # LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ./build/lonestar/analytics/cpu/bfs/bfs-cpu -algo=SkipHashPQ -startNode 1 -threads 192 -strict 0 -batch 1 -chunksize 128 -num_chunks 128 inputs/soc-LiveJournal1.gr
-
-                                                LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ./build/lonestar/analytics/cpu/sssp/sssp-cpu -algo=SkipHashPQ -startNode 1 -threads 96 -strict 0 -batch 1 -chunksize 64 -num_chunks 128 inputs/weighted_inputs/w_1-10_soc-LiveJournal1.gr
-                                                # ./build/lonestar/analytics/cpu/pagerank/pagerank-push-cpu -algo=SkipHashPQ -startNode 1 -threads 1 -strict 1 -chunksize 128 -num_chunks 128 inputs/soc-LiveJournal1.gr
+                                                # LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ./build/lonestar/analytics/cpu/bfs/bfs-cpu -algo=SkipHashPQ -startNode 1 -threads 96 -strict 0 -batch 1 -chunksize 16 -num_chunks 16 inputs/soc-LiveJournal1.gr
+                                                #LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ./build/lonestar/analytics/cpu/sssp/sssp-cpu -algo=SkipHashPQ -startNode 1 -threads 96 -strict 0 -batch 1 -chunksize 64 -num_chunks 128 inputs/weighted_inputs/w_1-10_soc-LiveJournal1.gr
+                                                # LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ./build/lonestar/analytics/cpu/pagerank/pagerank-push-cpu -algo=SkipHashPQ -threads 96 -strict 1 -chunksize 128 -num_chunks 128 -delta 28 inputs/soc-LiveJournal1.gr
                                                 
                                                 tot_time=0
                                                 tot_empty_work=0
+                                                tot_aborts=0
+                                                tot_aborts_per_op=0
                                                 for ((i = 1; i <= trials; i++)); do
                                                         filename="${log_dir}/${cnt1}_${ds}-${e}_results_${alg}_${g}_chunksize${c}_queues${n_queues}_delta${d}_threads${t}_trial${i}.log"
                                                         echo "Results" > $filename
@@ -120,16 +121,22 @@ for cur_ds in "$@"; do
 
                                                         ms=$(cat $filename | grep -oP 'runtime_ms \K[0-9]+')
                                                         empty_work=$(cat $filename | grep -oP 'totalEmptyWork \K[0-9]+')
+                                                        aborts=$(cat $filename | grep -oP 'Total Aborts: \K[0-9]+')
+                                                        aborts_per_op=$(grep -oP 'Aborts Per Op: \K[0-9]+(\.[0-9]+)?' "$filename")
 
                                                         (( tot_time += ms))
                                                         (( tot_empty_work += empty_work))
+                                                        (( tot_aborts += aborts))
+                                                        tot_aborts_per_op=$(echo "$tot_aborts_per_op + $aborts_per_op" | bc -l)
                                                 done
 
                                                 avg_time=$((tot_time / trials))
                                                 avg_empty_work=$((tot_empty_work / trials))
+                                                avg_aborts=$((tot_aborts / trials))
+                                                avg_aborts_per_op=$(echo "scale=4; $tot_aborts_per_op / $trials" | bc -l)
                                                 
-                                                printf "${cols_txt}\n" $cnt1 $ds $alg $e ${delta} $g $n_queues $c $t $avg_time $avg_empty_work >> $summary_txt
-                                                printf "${cols_csv}\n" $cnt1 $ds $alg $e ${delta} $g $n_queues $c $t $avg_time $avg_empty_work >> $summary_csv
+                                                printf "${cols_txt}\n" $cnt1 $ds $alg $e ${delta} $g $n_queues $c $t $avg_time $avg_empty_work $avg_aborts $avg_aborts_per_op >> $summary_txt
+                                                printf "${cols_csv}\n" $cnt1 $ds $alg $e ${delta} $g $n_queues $c $t $avg_time $avg_empty_work $avg_aborts $avg_aborts_per_op >> $summary_csv
                                                 tail -1 $summary_txt
                                                 
                                                 cnt1=`expr $cnt1 + 1`
@@ -160,11 +167,10 @@ for cur_ds in "$@"; do
                                 for s in "${stickiness[@]}"; do
                                         for t in "${threads[@]}"; do
                                                 num_queues=$((t * 2))
-                                                cmd="LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ${exec_dir}/${alg}/${alg}-cpu -startNode ${startNode} -threads $t -queues ${num_queues} -delta 0 -batch1 ${b} -batch2 ${b} -stick $s -buckets 64 -algo=${ds} ${input_dir}/${g}.gr"
+                                                cmd="LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ${exec_dir}/${alg}/${alg}-cpu -startNode ${startNode} -threads $t -queues ${num_queues} -delta 0 -batch1 ${b} -batch2 ${b} -stick $s -bucketNum 64 -algo=${ds} ${input_dir}/${g}.gr"
 
-                                                # LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ./build/lonestar/analytics/cpu/bfs/bfs-cpu -startNode 1 -threads 192 -queues 384 -delta 0 -batch1 128 -batch2 128 -stick 8 -buckets 64 -algo=MQBucket inputs/soc-LiveJournal1.gr
-
-                                                # LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ./build/lonestar/analytics/cpu/sssp/sssp-cpu -startNode 1 -threads 192 -queues 384 -delta 0 -batch1 128 -batch2 128 -stick 8 -buckets 64 -algo=MQBucket inputs/weighted_inputs/w_1-10_soc-LiveJournal1.gr
+                                                # LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ./build/lonestar/analytics/cpu/bfs/bfs-cpu -startNode 1 -threads 96 -queues 192 -delta 0 -batch1 128 -batch2 128 -stick 8 -bucketNum 64 -algo=MQBucket inputs/soc-LiveJournal1.gr
+                                                # LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ./build/lonestar/analytics/cpu/sssp/sssp-cpu -startNode 1 -threads 192 -queues 384 -delta 0 -batch1 128 -batch2 128 -stick 8 -bucketNum 64 -algo=MQBucket inputs/weighted_inputs/w_1-10_soc-LiveJournal1.gr
                                                 
                                                 tot_time=0
                                                 tot_empty_work=0
@@ -183,8 +189,8 @@ for cur_ds in "$@"; do
                                                 avg_time=$((tot_time / trials))
                                                 avg_empty_work=$((tot_empty_work / trials))
                                                 
-                                                printf "${cols_txt}\n" $cnt1 $ds $alg $b $delta $g $num_queues $s $t $avg_time $avg_empty_work >> $summary_txt
-                                                printf "${cols_csv}\n" $cnt1 $ds $alg $b $delta $g $num_queues $s $t $avg_time $avg_empty_work >> $summary_csv
+                                                printf "${cols_txt}\n" $cnt1 $ds $alg $b $delta $g $num_queues $s $t $avg_time $avg_empty_work "-" "-" >> $summary_txt
+                                                printf "${cols_csv}\n" $cnt1 $ds $alg $b $delta $g $num_queues $s $t $avg_time $avg_empty_work "-" "-" >> $summary_csv
                                                 tail -1 $summary_txt
                                                 
                                                 cnt1=`expr $cnt1 + 1`
@@ -234,8 +240,8 @@ for cur_ds in "$@"; do
                                                 avg_time=$((tot_time / trials))
                                                 avg_empty_work=$((tot_empty_work / trials))
                                                 
-                                                printf "${cols_txt}\n" $cnt1 $ds $alg - $delta $g $p $s $t $avg_time $avg_empty_work >> $summary_txt
-                                                printf "${cols_csv}\n" $cnt1 $ds $alg - $delta $g $p $s $t $avg_time $avg_empty_work >> $summary_csv
+                                                printf "${cols_txt}\n" $cnt1 $ds $alg - $delta $g $p $s $t $avg_time $avg_empty_work "-" "-" >> $summary_txt
+                                                printf "${cols_csv}\n" $cnt1 $ds $alg - $delta $g $p $s $t $avg_time $avg_empty_work "-" "-" >> $summary_csv
                                                 tail -1 $summary_txt
                                                 
                                                 cnt1=`expr $cnt1 + 1`
@@ -288,8 +294,8 @@ for cur_ds in "$@"; do
                                         avg_time=$((tot_time / trials))
                                         avg_empty_work=$((tot_empty_work / trials))
                                         
-                                        printf "${cols_txt}\n" $cnt1 $ds $alg 0 0 $g 0 0 $t $avg_time $avg_empty_work >> $summary_txt
-                                        printf "${cols_csv}\n" $cnt1 $ds $alg 0 0 $g 0 0 $t $avg_time $avg_empty_work >> $summary_csv
+                                        printf "${cols_txt}\n" $cnt1 $ds $alg 0 0 $g 0 0 $t $avg_time $avg_empty_work "-" "-" >> $summary_txt
+                                        printf "${cols_csv}\n" $cnt1 $ds $alg 0 0 $g 0 0 $t $avg_time $avg_empty_work "-" "-" >> $summary_csv
                                         tail -1 $summary_txt
                                         
                                         cnt1=`expr $cnt1 + 1`

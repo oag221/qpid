@@ -407,6 +407,9 @@ void SkipHashThreadTask(Graph& graph, SkipHash &pq, stat_t *stats, termination_d
 
   stats->iter = iter;
   stats->emptyWork = emptyWork;
+  #ifdef PROFILE_ABORTS
+  wl.thread_terminate();
+  #endif
 }
 
 template<typename SkipHash, typename descriptor>
@@ -501,6 +504,9 @@ void SkipHashThreadTask_BatchIns(Graph& graph, SkipHash &pq, stat_t *stats, term
 
   stats->iter = iter;
   stats->emptyWork = emptyWork;
+  #ifdef PROFILE_ABORTS
+  wl.thread_terminate();
+  #endif
 }
 
 template<typename SkipHash, typename descriptor>
@@ -591,6 +597,9 @@ void SkipHashThreadTask_OrdBatch(Graph& graph, SkipHash &pq, stat_t *stats, term
 
   stats->iter = iter;
   stats->emptyWork = emptyWork;
+  #ifdef PROFILE_ABORTS
+  wl.thread_terminate();
+  #endif
 }
 
 template<typename SkipHash, typename descriptor>
@@ -714,6 +723,9 @@ void SkipHashThreadTask_Strict(Graph& graph, SkipHash &pq, stat_t *stats, termin
 
   stats->iter = iter;
   stats->emptyWork = emptyWork;
+  #ifdef PROFILE_ABORTS
+  wl.thread_terminate();
+  #endif
 
   #ifdef PROFILING
   int tot_prios = 0;
@@ -1054,6 +1066,13 @@ void SkipHashPageRank(Graph& graph) {
 
   std::cout << "total iter = " << totalIter << "\n";
   std::cout << "totalEmptyWork " << totalEmptyWork << "\n";
+
+  #ifdef PROFILE_ABORTS
+  int num_aborts = wl.get_total_aborts();
+  double aborts_per_td = (double)num_aborts / totalIter;
+  std::cout << "Total Aborts: " << num_aborts << "\n";
+  std::cout << "Aborts Per Op: " << aborts_per_td << "\n";
+  #endif
 }
 
 // -------------------------- MQ Implementation ------------------

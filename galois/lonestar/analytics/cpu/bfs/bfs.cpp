@@ -624,7 +624,9 @@ void MQThreadTaskSTM(Graph& graph, MQ &wl, stat_t *stats, std::atomic<uint32_t> 
   }
   stats->iter = iter;
   stats->emptyWork = emptyWork;
- // wl.thread_terminate();
+  #ifdef PROFILE_ABORTS
+  wl.thread_terminate();
+  #endif
 }
 
 template<typename MQ, typename descriptor>
@@ -702,7 +704,9 @@ void MQThreadTaskSTM_Strict(Graph& graph, MQ &wl, stat_t *stats, std::atomic<uin
   }
   stats->iter = iter;
   stats->emptyWork = emptyWork;
-  //wl.thread_terminate();
+  #ifdef PROFILE_ABORTS
+  wl.thread_terminate();
+  #endif
   #ifdef PROFILING
   int tot_prios = 0;
   for (const auto& [key, value] : prio_freqs) {
@@ -773,7 +777,9 @@ void MQThreadTaskSTMBatch_1(Graph& graph, MQ &wl, stat_t *stats, std::atomic<uin
   }
   stats->iter = iter;
   stats->emptyWork = emptyWork;
-  //wl.thread_terminate(); //! COMMENT OUT WHEN RUNNING TESTS
+  #ifdef PROFILE_ABORTS
+  wl.thread_terminate();
+  #endif
   // double avg_inserted = (double)per_loop / num_loops;
   // std::cout << "avg inserted per single removal: " << avg_inserted << "\n";
 }
@@ -839,7 +845,9 @@ void MQThreadTaskSTMBatch_1_ordered(Graph& graph, MQ &wl, stat_t *stats, std::at
   }
   stats->iter = iter;
   stats->emptyWork = emptyWork;
-  //wl.thread_terminate(); //! COMMENT OUT WHEN RUNNING TESTS
+  #ifdef PROFILE_ABORTS
+  wl.thread_terminate(); //! COMMENT OUT WHEN RUNNING TESTS
+  #endif
   // double avg_inserted = (double)per_loop / num_loops;
   // std::cout << "avg inserted per single removal: " << avg_inserted << "\n";
 }
@@ -997,6 +1005,13 @@ void spawnTasksSTM(MQ_Type& wl, Graph& graph, const GNode& source, int threadNum
     totalEmptyWork += stats[i].emptyWork;
   }
   std::cout << "totalEmptyWork " << totalEmptyWork << "\n";
+
+  #ifdef PROFILE_ABORTS
+  int num_aborts = wl.get_total_aborts();
+  double aborts_per_td = (double)num_aborts / totalIter;
+  std::cout << "Total Aborts: " << num_aborts << "\n";
+  std::cout << "Aborts Per Op: " << aborts_per_td << "\n";
+  #endif
   //galois::runtime::reportStat_Single("BFS-MQBucket", "Iterations", totalIter);
   //galois::runtime::reportStat_Single("BFS-MQBucket", "EmptyWork", totalEmptyWork);
 }

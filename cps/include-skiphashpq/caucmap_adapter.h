@@ -28,8 +28,13 @@ class caucmap_adapter {
   using ROTX = typename OPTSTM::RO;
   using RWTX = typename OPTSTM::RW;
 
-  OMAP **buckets;             // The OMAPs that act as the buckets in the table.
+  OMAP *buckets;              // The OMAPs that act as the buckets in the table.
   const uint64_t num_buckets; // The number of buckets in the table.
+  /// num_buckets - 1 when num_buckets is a power of two, else 0.  Lets hash()
+  /// mask instead of dividing; the default table size (1048576) is a power of
+  /// two, and this sits on every insert and every extract.
+  const uint64_t bucket_mask;
+  const bool buckets_pow2;
 
 public:
   /// Create a non-resizable hash table with the specified number of buckets.
@@ -37,16 +42,21 @@ public:
   /// @param me  The operation that is constructing the table.
   /// @param cfg A configuration object with a `buckets` field
   template <typename config_t>
-  caucmap_adapter(OPTSTM *me, config_t *cfg) : num_buckets(cfg->buckets) {
-    buckets = (OMAP **)malloc(num_buckets * sizeof(OMAP *));
-    // Fill the "buckets" vector with empty OMAPs
+  caucmap_adapter(OPTSTM *me, config_t *cfg)
+      : num_buckets(cfg->buckets),
+        bucket_mask((uint64_t)cfg->buckets - 1),
+        buckets_pow2(cfg->buckets && ((cfg->buckets & (cfg->buckets - 1)) == 0)) {
+    // One contiguous allocation for the whole table, rather than one malloc per
+    // bucket.  With the default 1048576 buckets the old form cost a million
+    // mallocs here (plus two more and a transaction inside each bucket).
+    buckets = (OMAP *)malloc(num_buckets * sizeof(OMAP));
     for (unsigned int i = 0; i < num_buckets; ++i)
-      buckets[i] = new OMAP(me, cfg);
+      new (&buckets[i]) OMAP(me, cfg);
   }
 
   ~caucmap_adapter() {
     for (unsigned int i = 0; i < num_buckets; ++i)
-      delete buckets[i];
+      buckets[i].~OMAP();
     free(buckets);
   }
   
@@ -60,7 +70,10 @@ private:
   ///
   /// @return The hashed value of the key, modded by the number of buckets
   int hash(OPTSTM *me, const K key) {
-    return me->hash(pre_hash(key)) % num_buckets;
+    const uint64_t h = me->hash(pre_hash(key));
+    // The division this replaces cost ~20-40 cycles on a path that is a few
+    // hundred cycles long in total.
+    return (int)(buckets_pow2 ? (h & bucket_mask) : (h % num_buckets));
   }
 
 public:
@@ -76,11 +89,11 @@ public:
   /// @return A reference to the collection if found, nullptr if not, and NONE
   ///         on abort
   template <class TX> std::optional<C *> get_extract(TX &tx, const K &key) {
-    return buckets[hash(tx.OP(), key)]->get_extract(tx, key);
+    return buckets[hash(tx.OP(), key)].get_extract(tx, key);
   }
 
   template <class TX> std::optional<C *> get_ins(TX &tx, const K &key) {
-    return buckets[hash(tx.OP(), key)]->get_ins(tx, key);
+    return buckets[hash(tx.OP(), key)].get_ins(tx, key);
   }
 
   /// "Upsert" an empty collection for `key` and return a reference to it
@@ -90,7 +103,7 @@ public:
   ///
   /// @return A reference to the collection for `key`, or NONE on abort
   std::optional<C *> make_collection(RWTX &rw, const K &key) {
-    return buckets[hash(rw.OP(), key)]->make_collection(rw, key);
+    return buckets[hash(rw.OP(), key)].make_collection(rw, key);
   }
 
   /// Remove the node associated with `key`
@@ -101,7 +114,7 @@ public:
   /// @return True if the key was found and removed, false otherwise, NONE on
   ///         abort
   std::optional<bool> remove(RWTX &rw, const K &key) {
-    return buckets[hash(rw.OP(), key)]->remove(rw, key);
+    return buckets[hash(rw.OP(), key)].remove(rw, key);
   }
 
   std::pair<long,long> dump(ROTX &ro, bool print=false) {
@@ -110,7 +123,7 @@ public:
     //int print_rate = 1;
     for (unsigned i = 0; i < num_buckets; ++i) {
       
-      std::pair<int,long> ret = buckets[i]->dump(ro, print);
+      std::pair<int,long> ret = buckets[i].dump(ro, print);
       num_elems += ret.first;
       keysum += ret.second;
       // if (ret.first > 0) {
@@ -131,7 +144,7 @@ public:
     //int print_rate = 1;
     std::vector<std::pair<K,long>> ret;
     for (unsigned i = 0; i < num_buckets; ++i) {
-      auto ret_bucket = buckets[i]->dump_ht();
+      auto ret_bucket = buckets[i].dump_ht();
       ret.insert(ret.end(), ret_bucket.begin(), ret_bucket.end());
     }
     return ret;

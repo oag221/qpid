@@ -632,6 +632,9 @@ void STMThreadTask(Graph& graph, SkipHashPQ &wl, stat_t *stats, std::atomic<uint
   }
   stats->iter = iter;
   stats->emptyWork = emptyWork;
+  #ifdef PROFILE_ABORTS
+  wl.thread_terminate();
+  #endif
 }
 
 template<typename SkipHashPQ, typename descriptor>
@@ -704,6 +707,9 @@ void ThreadTaskSTM_Strict(Graph& graph, SkipHashPQ &wl, stat_t *stats, std::atom
   }
   stats->iter = iter;
   stats->emptyWork = emptyWork;
+  #ifdef PROFILE_ABORTS
+  wl.thread_terminate();
+  #endif
 }
 
 template<typename SkipHashPQ, typename descriptor>
@@ -767,6 +773,9 @@ void STMThreadTaskBatch_1(Graph& graph, SkipHashPQ &wl, stat_t *stats, std::atom
   }
   stats->iter = iter;
   stats->emptyWork = emptyWork;
+  #ifdef PROFILE_ABORTS
+  wl.thread_terminate();
+  #endif
 }
 
 template<typename SkipHashPQ, typename descriptor>
@@ -831,6 +840,9 @@ void STMThreadTaskBatch_1_ordered(Graph& graph, SkipHashPQ &wl, stat_t *stats, s
   }
   stats->iter = iter;
   stats->emptyWork = emptyWork;
+  #ifdef PROFILE_ABORTS
+  wl.thread_terminate();
+  #endif
 }
 
 template<typename MQ_Type>
@@ -978,6 +990,13 @@ void spawnTasksSTM(SkipHashPQ& wl, Graph& graph, const GNode& source, int thread
   }
 
   std::cout << "totalEmptyWork " << totalEmptyWork << "\n";
+  
+  #ifdef PROFILE_ABORTS
+  int num_aborts = wl.get_total_aborts();
+  double aborts_per_td = (double)num_aborts / totalIter;
+  std::cout << "Total Aborts: " << num_aborts << "\n";
+  std::cout << "Aborts Per Op: " << aborts_per_td << "\n";
+  #endif
 
   galois::runtime::reportStat_Single("SSSP-MQ", "Iterations", totalIter);
   galois::runtime::reportStat_Single("SSSP-MQ", "Emptywork", totalEmptyWork);

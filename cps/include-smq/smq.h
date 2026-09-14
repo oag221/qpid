@@ -99,8 +99,24 @@ public:
   }
 
   //! Checks whether the element is "null".
+  //!
+  //! This has to be a BIT comparison, not operator==.  `dummy` is produced by
+  //! memset(&dummy, 0xff, sizeof(dummy)) in StealingMultiQueue's constructor;
+  //! when the key type is floating point those bits are a NaN, and NaN != NaN,
+  //! so `element == dummy` was false even for the dummy itself.  The sentinel
+  //! then became unrecognisable: the loops in trySteal()/tryStealLocally() that
+  //! stop at the first dummy ran the full steal batch and pushed the unused
+  //! buffer slots into the heap as if they were work.  That pollution is
+  //! self-amplifying (dummies get re-stolen and re-pushed) and dummies were
+  //! handed back to the caller as (NaN, 0xFFFFFFFF), which the graph
+  //! applications then use as a node id.
+  //!
+  //! Compare the members rather than the whole object: pair<uint32_t, T*> has
+  //! padding bytes that assignment does not copy, so a whole-object memcmp
+  //! would report false negatives for a legitimately-assigned dummy.
   static bool isDummy(T const& element) {
-    return element == dummy;
+    return memcmp(&element.first,  &dummy.first,  sizeof(element.first))  == 0 &&
+           memcmp(&element.second, &dummy.second, sizeof(element.second)) == 0;
   }
 
   //! Gets current version of the stealing buffer.

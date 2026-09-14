@@ -26,6 +26,9 @@ add_definitions(-DPAGE_RANK)
 
 set(CPS_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../cps")
 include_directories(${CPS_ROOT})
+# priority_tracker.h includes "skiphash_pq_relaxed.h" unqualified, so the QPID
+# header directory has to be on the include path as well.
+include_directories(${CPS_ROOT}/include-skiphashpq)
 
 # Detect Cache Line Size (Required for Linden/Spraylist performance)
 if(UNIX AND NOT APPLE)

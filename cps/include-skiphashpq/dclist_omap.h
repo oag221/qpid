@@ -40,6 +40,10 @@ template <typename K, typename C, class OPTSTM> class dclist_omap {//! C = QD_T 
     /// Construct a node
     node_t() : prev(nullptr), next(nullptr) {}
 
+    /// Construct an already-linked node.  Used for the sentinels, so that
+    /// building a bucket needs neither an allocation nor a transaction.
+    node_t(node_t *p, node_t *n) : prev(p), next(n) {}
+
     /// Destructor is a no-op, but it needs to be virtual because of inheritance
     virtual ~node_t() {}
   };
@@ -62,6 +66,12 @@ template <typename K, typename C, class OPTSTM> class dclist_omap {//! C = QD_T 
     virtual ~data_t() {}
   };
 
+  // The sentinels are stored inline.  They used to be heap-allocated and then
+  // linked inside a transaction, which cost two mallocs plus a full commit for
+  // every bucket of the hash table -- ~3M allocations and 1M transactions at
+  // the default of 1048576 buckets, all before the first operation runs.
+  node_t head_store;
+  node_t tail_store;
   node_t *const head;   // The list head pointer
   node_t *const tail;   // The list tail pointer
   const uint32_t csize; // The size to pass to the collection constructor
@@ -74,19 +84,14 @@ public:
   /// @param cfg A configuration object
   template <typename config_t>
   dclist_omap(OPTSTM *me, config_t *cfg)
-      : head(new node_t()), tail(new node_t()), csize(cfg->chunksize), num_queues(cfg->num_queues)
-  {
-    RWTX rw(me);
-    head->next.set_cap(rw, head, tail);
-    tail->prev.set_cap(rw, tail, head);
-    if (!rw.OP()->try_end_rw())
-      std::terminate();
+      : head_store(nullptr, &tail_store), tail_store(&head_store, nullptr),
+        head(&head_store), tail(&tail_store),
+        csize(cfg->chunksize), num_queues(cfg->num_queues) {
+    // Nothing to do: the sentinels are already linked, and the object is not
+    // reachable by any other thread yet, so no transaction is required.
   }
 
-  ~dclist_omap() {
-    delete head;
-    delete tail;
-  }
+  ~dclist_omap() {}
 
 private:
   /// get_leq is an inclusive predecessor query that returns the largest node

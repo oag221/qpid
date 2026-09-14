@@ -40,7 +40,7 @@ cnt1=10000
 
 threads=(1 12 24 48 96)
 #delta=(28 27 26 25 24 23 22 21 20 19 18 17 16)
-delta=(20 24 28)
+delta=(28)
 trials=3
 exec_dir=./build/lonestar/analytics/cpu
 datasets=(soc-LiveJournal1 orkut roadnetCA twitter-2010) # soc-LiveJournal1 orkut roadnetCA twitter-2010
@@ -211,6 +211,8 @@ for cur_ds in "$@"; do
                                                         num_queues=$((t * 2))
                                                         
                                                         cmd="LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ${exec_dir}/${alg}/${alg}-push-cpu -threads $t -delta ${d} -steal_prob ${p} -steal_size ${s} -algo=${ds} ${input_dir}/${g}.gr"
+
+                                                        # LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ./build/lonestar/analytics/cpu/pagerank/pagerank-push-cpu -threads 96 -delta 20 -steal_prob 8 -steal_size 128 -algo=SMQ inputs/soc-LiveJournal1.gr
                                                         
                                                         tot_time=0
                                                         tot_empty_work=0

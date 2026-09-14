@@ -91,7 +91,7 @@ for cur_ds in "$@"; do
                                                         fi
 
                                                         cmd="LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ./build/astar input/germany.bin 0 320970 SkipHashPQ $t $c ${n_queues} ${strict_opt} ${batch_opt} $d"
-                                                        # ./build/astar input/germany.bin 0 320970 SkipHashPQ 1 4 8 1 0 16"
+                                                        # LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ./build/astar input/germany.bin 0 320970 SkipHashPQ 96 4 8 0 1 16"
 
                                                         tot_time=0
                                                         tot_empty_work=0

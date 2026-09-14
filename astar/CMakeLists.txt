@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 project(astar)
 
-add_definitions(-DPROFILING -DPROFILING_SERIAL)
+# add_definitions(-DPROFILING -DPROFILING_SERIAL)
 
 include_directories(${Boost_INCLUDE_DIRS})
 set(CMAKE_CXX_STANDARD 17)
@@ -10,6 +10,9 @@ set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
 
 set(CPS_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../cps")
 include_directories(${CPS_ROOT})
+# priority_tracker.h includes "skiphash_pq_relaxed.h" unqualified, so the
+# QPID header directory has to be on the include path as well.
+include_directories(${CPS_ROOT}/include-skiphashpq)
 
 set(CACHE_LINE_SIZE 64)
 

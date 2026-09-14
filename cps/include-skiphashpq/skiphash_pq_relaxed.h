@@ -88,6 +88,16 @@ template <typename P, typename J, class OPTSTM> class skiphash_pq_relaxed {
   inline static thread_local int t_num_pool_use = 0;
  #endif
 
+  #ifdef PROFILE_ABORTS
+  struct alignas(64) thread_metrics {
+    int abort_cnt;
+    thread_metrics() : abort_cnt(0) {}
+  };
+  std::vector<int> final_aborts; // 96 is max threads
+  inline static thread_local thread_metrics metrics;
+  std::mutex global_mutex_aborts;
+  #endif
+
   /// Global data structures
   UMAP_T jobs;     // The unordered map of queues of jobs
   SL_T priorities; // The skip list of priorities
@@ -104,6 +114,10 @@ public:
     for (int i = 0; i < cfg->threads; i++) {
       thread_pools.push_back(pool_t(CHUNK_SIZE, cfg->pool_reserve, cfg->pool_init_chunks, me));
     }
+    #endif
+
+    #ifdef PROFILE_ABORTS
+    std::cout << "WARNING: PROFILE_ABORTS is defined.\n";
     #endif
 
     #ifdef PROFILING
@@ -136,8 +150,20 @@ public:
   /// ! API !
   void insert(OPTSTM *me, P prio, J job) {
     auto delta_p = prio >> DELTA;
+
+    #ifdef PROFILE_ABORTS
+    bool abort = false;
+    #endif
+
     // Since we're using OPTSTM2, we need to manually handle rollback:
     while (true) {
+      #ifdef PROFILE_ABORTS
+      if (abort) metrics.abort_cnt++;
+      else abort = true;
+      #endif
+
+      // Drop anything an aborted attempt queued for publication.
+      Q_T::pub_clear();
       RW rw(me);
       
       // Get the collection where this job should go.  If it returns nullptr,
@@ -171,6 +197,9 @@ public:
         continue;
       if (!me->try_end_rw())
         continue;
+      // Committed: now the jobs we wrote may be advertised to the
+      // uninstrumented claim path in extract_min_strict().
+      Q_T::pub_flush();
      #ifdef CHUNK_POOL
       if (used_pool) {
         // only remove the chunk once the operation succeeds
@@ -230,8 +259,11 @@ public:
         if (batch_size == 1) {
           insert(me, cur_k, t_ins_vec[start_idx].job.get_unsafe());
         } else {
-          std::vector<kv_t> vec_sub(t_ins_vec.begin() + start_idx, t_ins_vec.begin() + cur_idx);
-          insert_batch_internal(me, prev_delta_p, vec_sub, batch_size);
+          // Pass a window of the thread-local buffer.  Materialising a
+          // sub-vector here, and then taking it BY VALUE in
+          // insert_batch_internal, cost two heap allocations and two copies on
+          // every flush of the insert batch.
+          insert_batch_internal(me, prev_delta_p, t_ins_vec, start_idx, cur_idx);
         }
       }
       // Reset index into vector
@@ -258,8 +290,17 @@ public:
       return std::make_pair(ret_p, ret_j);
     }
 
+    #ifdef PROFILE_ABORTS
+    bool abort = false;
+    #endif
+
     // consult global structure
     while (true) {
+      #ifdef PROFILE_ABORTS
+      if (abort) metrics.abort_cnt++;
+      else abort = true;
+      #endif
+
       RO ro(me);
 
       // Check if skiplist is empty
@@ -277,10 +318,18 @@ public:
         continue;
       auto p = p_o.value();
 
-      //! END RO
+      //! RO -> RW.  Adopting the read-only transaction keeps its start time,
+      //! which saves a clock read and two fences relative to end_ro() followed
+      //! by a fresh RW.  Semantics are unchanged: the RO reads were never
+      //! logged for validation either way (this policy has no timestamp
+      //! extension), so the priority read above is re-checked below whenever it
+      //! matters.  Define QPID_NO_RO_UPGRADE to restore the old sequence.
+#ifdef QPID_NO_RO_UPGRADE
       me->end_ro();
-      //! START RW
       RW rw(me);
+#else
+      RW rw(me, std::move(ro));
+#endif
 
       // Get the queue (collection) for that priority
       auto ret_o = jobs.get_extract(rw, p);
@@ -372,7 +421,17 @@ public:
       t_remove_arr->reset();
       t_local_pool->pool_insert_chunk(t_remove_arr);
      #else
+
+      #ifdef PROFILE_ABORTS
+      bool abort = false;
+      #endif
+
       while (true) {
+        #ifdef PROFILE_ABORTS
+        if (abort) metrics.abort_cnt++;
+        else abort = true;
+        #endif
+
         RW rw(me);
         rw.reclaim(t_remove_arr);
         if (me->try_end_rw())
@@ -389,7 +448,16 @@ public:
   ///
   /// @return The prio-job pair that was found
   std::optional<std::pair<P,J>> extract_min_strict(OPTSTM *me) {
+    #ifdef PROFILE_ABORTS
+    bool abort = false;
+    #endif
+
     while (true) {
+      #ifdef PROFILE_ABORTS
+      if (abort) metrics.abort_cnt++;
+      else abort = true;
+      #endif
+
      #ifdef CHUNK_POOL
       typename Q_T::q_node_t* retired_chunk = nullptr;
      #endif
@@ -412,10 +480,18 @@ public:
         continue;
       auto p = p_o.value();
 
-      //! END RO
+      //! RO -> RW.  Adopting the read-only transaction keeps its start time,
+      //! which saves a clock read and two fences relative to end_ro() followed
+      //! by a fresh RW.  Semantics are unchanged: the RO reads were never
+      //! logged for validation either way (this policy has no timestamp
+      //! extension), so the priority read above is re-checked below whenever it
+      //! matters.  Define QPID_NO_RO_UPGRADE to restore the old sequence.
+#ifdef QPID_NO_RO_UPGRADE
       me->end_ro();
-      //! START RW
       RW rw(me);
+#else
+      RW rw(me, std::move(ro));
+#endif
 
       // Get the queue (collection) for that priority
       auto ret_o = jobs.get_extract(rw, p);
@@ -430,12 +506,17 @@ public:
       }
 
       bool empty_q = false; // reset to true in dequeue() if all queues become empty
+      // `retry` is set when the chosen lane's head chunk turned out to be
+      // exhausted.  The transaction then carries only the work of retiring that
+      // chunk (and possibly removing the priority); it commits normally, but
+      // yields no job, so we go around again.
+      bool retry = false;
      #ifdef CHUNK_POOL
-      auto p_job_o = q->dequeue_strict(rw, std::ref(empty_q), std::ref(retired_chunk));
+      auto p_job_o = q->dequeue_strict(rw, std::ref(empty_q), std::ref(retry), std::ref(retired_chunk));
      #else
-      auto p_job_o = q->dequeue_strict(rw, std::ref(empty_q));
+      auto p_job_o = q->dequeue_strict(rw, std::ref(empty_q), std::ref(retry));
      #endif
-      if (!p_job_o)
+      if (!p_job_o && !retry)
         continue;
 
       // Check if all queues are empty
@@ -477,6 +558,8 @@ public:
         t_local_pool->pool_insert_chunk(retired_chunk);
       }
      #endif
+      if (retry)
+        continue; // the retire committed; now go find an actual job
       return p_job_o.value();
     }
   }
@@ -488,9 +571,22 @@ public:
   /// @param me   The caller's thread context
   /// @param delta_p The delta-shifted priority (if DELTA != 0) for the new jobs
   /// @param job  The new jobs
-  void insert_batch_internal(OPTSTM *me, P delta_p, std::vector<kv_t> batch, int batch_size) {
+  /// @param batch      the buffer holding the jobs (not copied)
+  /// @param batch_beg   first index to insert
+  /// @param batch_end   one past the last index to insert
+  void insert_batch_internal(OPTSTM *me, P delta_p, std::vector<kv_t> &batch, int batch_beg, int batch_end) {
+    #ifdef PROFILE_ABORTS
+    bool abort = false;
+    #endif
+    
     // Since we're using OPTSTM2, we need to manually handle rollback:
     while (true) {
+      #ifdef PROFILE_ABORTS
+      if (abort) metrics.abort_cnt++;
+      else abort = true;
+      #endif
+
+      Q_T::pub_clear();
       RW rw(me);
       
       // Get the collection where this job should go.  If it returns nullptr,
@@ -515,13 +611,14 @@ public:
       bool used_pool;
       if (!c->enqueue_batch_vec(rw, *t_local_pool, used_pool, batch, batch_size)) continue;
      #else
-      if (!c->enqueue_batch_vec(rw, batch, batch_size)) continue;
+      if (!c->enqueue_batch_vec(rw, batch, batch_beg, batch_end)) continue;
      #endif
       // Update the skip list, if necessary
       if (newprio && !priorities.insert_guaranteed(rw, delta_p))
         continue;
       if (!me->try_end_rw())
         continue;
+      Q_T::pub_flush();
 
      #ifdef CHUNK_POOL
       if (used_pool) t_local_pool->pool_remove_chunk();
@@ -612,5 +709,20 @@ public:
     collected_num_allocs += t_num_allocs;
     collected_num_pool_use += t_num_pool_use;
    #endif
+
+   #ifdef PROFILE_ABORTS
+   std::lock_guard<std::mutex> lock(global_mutex_aborts);
+   final_aborts.push_back(metrics.abort_cnt);
+   #endif
   }
+
+  #ifdef PROFILE_ABORTS
+  int get_total_aborts() {
+    int tot_aborts = 0;
+    for (int i = 0; i < final_aborts.size(); i++) {
+      tot_aborts += final_aborts[i];
+    }
+    return tot_aborts;
+  }
+  #endif
 };

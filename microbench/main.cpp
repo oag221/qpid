@@ -173,8 +173,12 @@ void worker_thread(int tid,
     //*pq.initTID();
     #if defined(QPID)
     auto* me = new descriptor();
-    if (tid) pq.init_thread(me, tid);
-    else pq.re_init_thread(me);
+    // NB: worker 0 is a *different* thread from the one that ran prefill, so it
+    // needs init_thread() like every other worker.  re_init_thread() only
+    // resets pool/profiling counters and never sizes the thread-local insert
+    // batch, so calling it here left t_ins_vec empty and made any use of the
+    // insert_batch()/flush_batch() API write out of bounds on this thread.
+    pq.init_thread(me, tid);
     #else
     INIT_THREAD;
     #endif

@@ -74,17 +74,25 @@ public:
       : start_time(END_OF_TIME),
         my_lock(LOCK_BIT | reinterpret_cast<uintptr_t>(this)) {}
 
-  /// Start using exoTM to read orecs
-  void ro_begin() {
-    // Read the clock, with sufficient (platform-defined) fencing to ensure that
-    // all orecs will be read *after* this clock read.
-    //
-    // TODO:  Investigate coupling this clock with the SMR's clock
-    //
-    // TODO:  Should the clock tell us if we need a fence or not?
-    uint64_t time = clock.get_time_strong_ordering(global_clock);
+  /// Read the clock, with sufficient (platform-defined) fencing to ensure that
+  /// all orecs will be read *after* this clock read.  Exposed so that a policy
+  /// can publish the same timestamp to its SMR before committing to it here,
+  /// rather than reading the clock twice per operation.
+  uint64_t read_clock() { return clock.get_time_strong_ordering(global_clock); }
+
+  /// Start using exoTM to read orecs, at a timestamp the caller already read.
+  /// The exchange is a full fence, so anything the caller stored beforehand
+  /// (e.g. an SMR epoch) is visible before any orec is read.
+  void ro_begin_at(uint64_t time) { start_time.exchange(time); }
+
+  /// Start using exoTM to read and write orecs, at a caller-supplied timestamp
+  void wo_begin_at(uint64_t time) {
     start_time.exchange(time);
+    unwound = false;
   }
+
+  /// Start using exoTM to read orecs
+  void ro_begin() { ro_begin_at(read_clock()); }
 
   /// Stop using exoTM to read orecs
   void ro_end() {
@@ -165,16 +173,14 @@ public:
   }
 
   /// Start using exoTM to read and write orecs
-  void wo_begin() {
-    // Read the hardware clock, just like in ro_begin()
-    uint64_t time =
-        clock.get_time_strong_ordering(global_clock); // TODO: get_time_relaxed?
-    start_time.exchange(time);
-    // Mark that we're not unwinding
-    //
-    // NB: we set it here so hopefully the compiler can propagate it
-    unwound = false;
-  }
+  void wo_begin() { wo_begin_at(read_clock()); }
+
+  /// Turn an in-flight reading transaction into a writing one, *keeping* its
+  /// start time.  This lets an operation that reads before it writes avoid the
+  /// clock read and pair of fences that ro_end() + wo_begin() would cost.  The
+  /// older start time only makes the transaction more likely to abort; it can
+  /// never make it accept a value it should have rejected.
+  void wo_upgrade() { unwound = false; }
 
   /// Acquire an orec, only if its version is consistent with `this.start_time`
   ///
