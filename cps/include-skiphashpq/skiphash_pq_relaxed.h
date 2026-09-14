@@ -558,8 +558,12 @@ public:
         t_local_pool->pool_insert_chunk(retired_chunk);
       }
      #endif
-      if (retry)
+      if (retry) {
+        #ifdef PROFILE_ABORTS
+        abort = false;
+        #endif
         continue; // the retire committed; now go find an actual job
+      }
       return p_job_o.value();
     }
   }

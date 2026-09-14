@@ -71,7 +71,7 @@ for cur_ds in "$@"; do
                 ds="SkipHashPQ"
                 printf "NOTE: for SkipHashPQ, \`n_queues\` for 1 thread is acually always 1 (printed as not 1 for convenience of grouping)\n\n"
 
-                headers="step ds alg exp delta graph n_queues chunk_size threads time(ms) wasted_work"
+                headers="step ds alg exp delta graph n_queues chunk_size threads time(ms) wasted_work aborts a_per_op"
                 printf "${cols_txt}\n" ${headers} >> $summary_txt
                 printf "${cols_csv}\n" ${headers} >> $summary_csv
                 tail $summary_txt
