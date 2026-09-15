@@ -1324,12 +1324,38 @@ void MQAlgo(Graph& graph, const GNode& source, int threadNum, int queueNum) {
     numa_pq_ds.PQInit();
     spawnTasksPIPQ<pipq_t>(numa_pq_ds, graph, source, threadNum, prios, detector);
   } else if (algo == SMQ) {
-    const size_t steal_probability = 16; // 1/8 probability of stealing
-    const size_t steal_batch_size = 128; // size of batch to steal
+    if (steal_prob == 8 && steal_size == 8) {
+      const size_t steal_probability = 8; // 1/8 probability of stealing
+      const size_t steal_batch_size = 8; // size of batch to steal
 
-    using smq_t = smq_ns::StealingMultiQueue<std::pair<uint32_t,uint32_t>,uint32_t,steal_probability,steal_batch_size,true>;
-    auto smq_ds = smq_t(threadNum);
-    spawnTasksSMQ<smq_t>(smq_ds, graph, source, threadNum, prios, detector);
+      using smq_t = smq_ns::StealingMultiQueue<std::pair<uint32_t,uint32_t>,uint32_t,steal_probability,steal_batch_size,true>;
+      auto smq_ds = smq_t(threadNum);
+      spawnTasksSMQ<smq_t>(smq_ds, graph, source, threadNum, prios, detector);
+    } else if (steal_prob == 8 && steal_size == 16) {
+      const size_t steal_probability = 8; // 1/8 probability of stealing
+      const size_t steal_batch_size = 16; // size of batch to steal
+
+      using smq_t = smq_ns::StealingMultiQueue<std::pair<uint32_t,uint32_t>,uint32_t,steal_probability,steal_batch_size,true>;
+      auto smq_ds = smq_t(threadNum);
+      spawnTasksSMQ<smq_t>(smq_ds, graph, source, threadNum, prios, detector);
+    } else if (steal_prob == 8 && steal_size == 32) {
+      const size_t steal_probability = 8; // 1/8 probability of stealing
+      const size_t steal_batch_size = 32; // size of batch to steal
+
+      using smq_t = smq_ns::StealingMultiQueue<std::pair<uint32_t,uint32_t>,uint32_t,steal_probability,steal_batch_size,true>;
+      auto smq_ds = smq_t(threadNum);
+      spawnTasksSMQ<smq_t>(smq_ds, graph, source, threadNum, prios, detector);
+    } else if (steal_prob == 8 && steal_size == 128) {
+      const size_t steal_probability = 8; // 1/8 probability of stealing
+      const size_t steal_batch_size = 128; // size of batch to steal
+
+      using smq_t = smq_ns::StealingMultiQueue<std::pair<uint32_t,uint32_t>,uint32_t,steal_probability,steal_batch_size,true>;
+      auto smq_ds = smq_t(threadNum);
+      spawnTasksSMQ<smq_t>(smq_ds, graph, source, threadNum, prios, detector);
+    } else {
+      std::cout << "Provided config is not an option, update code to enable steal_prob=" << steal_prob << " and steal_size=" << steal_size << "\n";
+    }
+    
   } else if (algo == SkipHashPQ) {
     // SkipHashPQ
     #define _ALG eager_noext_c1_t

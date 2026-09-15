@@ -153,7 +153,7 @@ for cur_ds in "$@"; do
                 #########################################################
                 ds="MQBucket"
 
-                headers_mqbucket="step ds alg batch_size delta graph n_queues stick threads time(ms) wasted_work"
+                headers_mqbucket="step ds alg batch_size delta graph n_queues stick threads time(ms) wasted_work aborts a_per_op"
                 printf "\n${cols_txt}\n" ${headers_mqbucket} >> $summary_txt
                 printf "${cols_csv}\n" ${headers_mqbucket} >> $summary_csv
                 tail -1 $summary_txt
@@ -207,7 +207,7 @@ for cur_ds in "$@"; do
                 #########################################################
                 ds="SMQ"
 
-                headers_smq="step ds alg exp delta graph steal_prob steal_size threads time(ms) wasted_work"
+                headers_smq="step ds alg exp delta graph steal_prob steal_size threads time(ms) wasted_work aborts a_per_op"
                 printf "\n${cols_txt}\n" ${headers_smq} >> $summary_txt
                 printf "${cols_csv}\n" ${headers_smq} >> $summary_csv
                 tail -1 $summary_txt
@@ -262,7 +262,7 @@ for cur_ds in "$@"; do
                         pqs=($cur_ds)
                 fi
 
-                headers_compet="step ds alg exp delta graph n_queues chunk_size threads time(ms) wasted_work"
+                headers_compet="step ds alg exp delta graph n_queues chunk_size threads time(ms) wasted_work aborts a_per_op"
                 printf "${cols_txt}\n" ${headers_compet} >> $summary_txt
                 printf "${cols_csv}\n" ${headers_compet} >> $summary_csv
                 tail $summary_txt
